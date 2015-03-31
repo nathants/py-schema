@@ -1,19 +1,20 @@
 from __future__ import print_function, absolute_import
-import tornado.concurrent
+import functools
+import inspect
+import pprint
+import re
 import sys
 import traceback
-import six
-import functools
-import re
-import pprint
-import s.hacks
-import s.func
-import s.dicts
-import s.strings
-import s.exceptions
-import s.data
 import types
-import inspect
+
+import s.data
+import s.dicts
+import s.exceptions
+import s.func
+import s.strings
+
+import six
+import tornado.concurrent
 import tornado.gen
 
 
@@ -50,12 +51,6 @@ def is_valid(schema, value):
 
 
 def validate(schema, value, exact_match=False):
-    if disabled:
-        return value
-    return _validate(schema, value, exact_match)
-
-
-def _validate(schema, value, exact_match=False):
     """
     >>> import pytest
 
@@ -144,8 +139,13 @@ def _validate(schema, value, exact_match=False):
     #     else:
     #         print('unknown message')
     #
-
     """
+    if disabled:
+        return value
+    return _validate(schema, value, exact_match)
+
+
+def _validate(schema, value, exact_match=False):
     try:
         with s.exceptions.update(_updater(schema, value), AssertionError):
             # TODO does this block belong in _check()? should validate and _check even be seperate?
