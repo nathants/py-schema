@@ -371,7 +371,7 @@ def _get_schemas(fn, args, kwargs):
 
 
 def _read_annotations(fn, arg_schemas, kwarg_schemas):
-    if not arg_schemas and six.PY3:
+    if not arg_schemas and sys.version_info.major == 3:
         sig = inspect.signature(fn)
         arg_schemas = [x.annotation
                        for x in sig.parameters.values()
