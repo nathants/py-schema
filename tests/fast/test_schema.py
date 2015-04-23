@@ -37,10 +37,17 @@ def test_merge():
     schema.validate(shape, {'a': 'a', 'b': 1})
 
 
+def test_future_when_the_schema_is_a_future_type():
+    shape = tornado.concurrent.Future
+    f = shape()
+    assert schema.validate(shape, f) is f
+
+
 def test_future():
     shape = str
     f1 = tornado.concurrent.Future()
     f2 = schema.validate(shape, f1)
+    assert f1 is not f2
     f1.set_result('asdf')
     assert f2.result() == 'asdf'
 
@@ -49,6 +56,7 @@ def test_future_fail():
     shape = str
     f1 = tornado.concurrent.Future()
     f2 = schema.validate(shape, f1)
+    assert f1 is not f2
     f1.set_result(1)
     with pytest.raises(schema.Error):
         f2.result()

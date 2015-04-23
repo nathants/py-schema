@@ -149,8 +149,9 @@ def _validate(schema, value, exact_match=False):
     try:
         with s.exceptions.update(_updater(schema, value), AssertionError):
             # TODO does this block belong in _check()? should validate and _check even be seperate?
-            # if isinstance(value, (tornado.concurrent.Future, concurrent.futures.Future)):
-            if hasattr(value, 'add_done_callback'):
+            value_is_a_future = hasattr(value, 'add_done_callback')
+            schema_is_a_future_type = hasattr(schema, 'add_done_callback') and type(schema) is type
+            if value_is_a_future and not schema_is_a_future_type:
                 future = type(value)()
                 @value.add_done_callback
                 def fn(f):
