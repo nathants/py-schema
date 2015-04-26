@@ -244,10 +244,11 @@ def _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_matc
     val = {}
     for k, v in value.items():
         value_match = k in schema
-        type_match = type(k) in [x for x in schema if isinstance(x, type)] or object in schema
-        if value_match or type_match:
-            key = k if value_match else type(k)
-            validator = schema.get(key) or schema[object]
+        type_match = type(k) in [x for x in schema if isinstance(x, type)]
+        object_match = object in schema
+        if value_match or type_match or object_match:
+            key = k if value_match else type(k) if type_match else object
+            validator = schema[key]
             validated_schema_items.append((key, validator))
             with s.exceptions.update("key:\n  {}".format(k), AssertionError):
                 val[k] = _check(validator, v)

@@ -8,6 +8,16 @@ import s.dicts
 import schema
 
 
+def test_none_as_schema():
+    shape = {str: None}
+    schema.validate(shape, {'a': None})
+
+
+def test_none_as_schema():
+    shape = {str: False}
+    schema.validate(shape, {'a': False})
+
+
 def test_new_schema_old_data():
     shape = {'a': int, 'b': (':optional', int, 2)}
     assert schema.validate(shape, {'a': 1}) == {'a': 1, 'b': 2}
