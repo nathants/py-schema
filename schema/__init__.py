@@ -3,19 +3,18 @@ import functools
 import inspect
 import pprint
 import re
-import sys
-import traceback
-import types
-
+import s.async
 import s.data
 import s.dicts
 import s.exceptions
 import s.func
 import s.strings
-
 import six
+import sys
 import tornado.concurrent
 import tornado.gen
+import traceback
+import types
 
 
 disabled = False
@@ -149,8 +148,8 @@ def _validate(schema, value, exact_match=False):
     try:
         with s.exceptions.update(_updater(schema, value), AssertionError):
             # TODO does this block belong in _check()? should validate and _check even be seperate?
-            value_is_a_future = hasattr(value, 'add_done_callback')
-            schema_is_a_future_type = hasattr(schema, 'add_done_callback') and type(schema) is type
+            value_is_a_future = s.async.is_future(value)
+            schema_is_a_future_type = s.async.is_future(schema) and type(schema) is type
             if value_is_a_future and not schema_is_a_future_type:
                 future = type(value)()
                 @value.add_done_callback
@@ -415,17 +414,17 @@ def _check_args(args, kwargs, name, schemas):
             _args = []
             for i, (schema, arg) in enumerate(zip(schemas['arg'], args)):
                 with s.exceptions.update('pos arg num:\n  {}'.format(i), AssertionError):
-                    _args.append(_validate(schema, arg))
+                    _args.append(validate(schema, arg))
             if schemas['args'] and args[len(schemas['arg']):]:
-                _args += _validate(schemas['args'], args[len(schemas['arg']):])
+                _args += validate(schemas['args'], args[len(schemas['arg']):])
             _kwargs = {}
             for k, v in kwargs.items():
                 if k in schemas['kwarg']:
                     with s.exceptions.update('keyword arg:\n  {}'.format(k), AssertionError):
-                        _kwargs[k] = _validate(schemas['kwarg'][k], v)
+                        _kwargs[k] = validate(schemas['kwarg'][k], v)
                 elif schemas['kwargs']:
                     with s.exceptions.update('keyword args schema failed.', AssertionError):
-                        _kwargs[k] = _validate(schemas['kwargs'], {k: v})[k]
+                        _kwargs[k] = validate(schemas['kwargs'], {k: v})[k]
                 else:
                     raise AssertionError('cannot check {} for unknown key: {}={}'.format(name, k, v))
             return _args, _kwargs
@@ -445,7 +444,7 @@ def _fn_check(decoratee, name, schemas):
                 args, kwargs = _check_args(args, kwargs, name, schemas)
         value = decoratee(*args, **kwargs)
         with s.exceptions.update('schema.check failed for return value of function:\n {}'.format(name), AssertionError):
-            output = _validate(schemas['return'], value)
+            output = validate(schemas['return'], value)
         return output
     return decorated
 
@@ -466,7 +465,7 @@ def _gen_check(decoratee, name, schemas):
         while True:
             if not first_send:
                 with s.exceptions.update('schema.check failed for send value of generator:\n {}'.format(name), AssertionError):
-                    to_send = _validate(schemas['send'], to_send)
+                    to_send = validate(schemas['send'], to_send)
             first_send = False
             try:
                 if send_exception:
@@ -475,10 +474,10 @@ def _gen_check(decoratee, name, schemas):
                 else:
                     to_yield = generator.send(to_send)
                 with s.exceptions.update('schema.check failed for yield value of generator:\n {}'.format(name), AssertionError):
-                    to_yield = _validate(schemas['yield'], to_yield)
+                    to_yield = validate(schemas['yield'], to_yield)
             except (tornado.gen.Return, StopIteration) as e:
                 with s.exceptions.update('schema.check failed for return value of generator:\n {}'.format(name), AssertionError):
-                    e.value = _validate(schemas['return'], getattr(e, 'value', None))
+                    e.value = validate(schemas['return'], getattr(e, 'value', None))
                 raise
             try:
                 to_send = yield to_yield

@@ -1,11 +1,10 @@
 from __future__ import print_function, absolute_import
 import pytest
+import s.dicts
+import schema
 import six
 import tornado.concurrent
 import tornado.ioloop
-
-import s.dicts
-import schema
 
 
 def test_none_as_schema():

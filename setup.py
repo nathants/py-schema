@@ -9,5 +9,6 @@ setuptools.setup(
     author_email='me@nathants.com',
     url='http://github.com/nathants/schema',
     packages=setuptools.find_packages(),
+    install_requires=open('requirements.txt').readlines(),
     description='data centric schema validation',
 )
