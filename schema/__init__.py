@@ -20,15 +20,6 @@ import types
 disabled = False
 
 
-# TODO % is an order of mag faster than .format. so use %.
-
-# TODO how to provide to implementations, with assert messages and without. must duplicate the code?
-
-
-# TODO helpful but expensive stuff is globally disableable
-# TODO all the exceptions.update calls here are horrendously expensive.
-
-
 _schema_commands = (':or',
                     ':fn',
                     ':optional',
@@ -42,11 +33,6 @@ def is_valid(schema, value):
         return True
     except AssertionError:
         return False
-
-
-# TODO how to schema this set of objects: (':foo', 1, 2), (':foo', 3, 4, 5)
-# different lengths? *args?
-# think about schemaing the args to s.func.pipe()
 
 
 def validate(schema, value, exact_match=False):
@@ -272,7 +258,7 @@ def _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_
                 elif isinstance(v, (list, tuple)) and v and v[0] == ':optional':
                     assert len(v) == 3, ':optional schema should be (:optional, schema, default-value), not: {}'.format(v)
                     _, schema, default_value = v
-                    value = s.dicts.merge(value, {k: _validate(schema, default_value)}, freeze=False)
+                    value = s.dicts.merge(value, {k: _validate(schema, default_value)})
                 else: # TODO is it useful to optionally ignore missing keys in the value?
                     raise AssertionError('{} <{}> is missing required key: {} <{}>'.format(value, type(value), k, type(k)))
     return value
@@ -297,7 +283,7 @@ def _check(validator, value):
                 if validator[0] == ':merge':
                     assert len(validator) == 3, ':merge schema should be (:merge, dict1, dict2), not: {}'.format(validator)
                     assert all(isinstance(x, dict) for x in validator[1:]), ':merge only works with two dicts, not: {}'.format(validator[1:])
-                    return _validate(s.dicts.merge(*validator[1:], freeze=False), value)
+                    return _validate(s.dicts.merge(*validator[1:]), value)
                 elif validator[0] == ':optional':
                     assert len(validator) == 3, ':optional schema should be (:optional, schema, default-value), not: {}'.format(validator)
                     return _check(validator[1], value)
@@ -388,15 +374,13 @@ def _read_annotations(fn, arg_schemas, kwarg_schemas):
                             {'_args': x.annotation
                              for x in sig.parameters.values()
                              if x.annotation is not inspect._empty
-                             and x.kind is x.VAR_POSITIONAL},
-                            freeze=False)
+                             and x.kind is x.VAR_POSITIONAL})
         val = s.dicts.merge(val,
                             {'_kwargs': x.annotation
                              for x in sig.parameters.values()
                              if x.annotation is not inspect._empty
-                             and x.kind is x.VAR_KEYWORD},
-                            freeze=False)
-        kwarg_schemas = s.dicts.merge(kwarg_schemas, val, freeze=False)
+                             and x.kind is x.VAR_KEYWORD})
+        kwarg_schemas = s.dicts.merge(kwarg_schemas, val)
         if sig.return_annotation is not inspect._empty:
             kwarg_schemas['_return'] = sig.return_annotation
     assert arg_schemas or kwarg_schemas, 'you asked to check, but provided no schemas for: {}'.format(s.func.name(fn))
