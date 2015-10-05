@@ -1,10 +1,9 @@
-from __future__ import print_function, absolute_import
 import pytest
 import s.dicts
 import schema
-import six
 import tornado.concurrent
 import tornado.ioloop
+import tornado.gen
 
 
 def test_none_as_schema():
@@ -18,7 +17,7 @@ def test_none_as_schema():
 
 
 def test_new_schema_old_data():
-    shape = {'a': int, 'b': (':optional', int, 2)}
+    shape = {'a': int, 'b': (':O', int, 2)}
     assert schema.validate(shape, {'a': 1}) == {'a': 1, 'b': 2}
 
 
@@ -39,11 +38,6 @@ def test_missing_keys_in_value_are_never_allowed():
         schema.validate(shape, {'a': 1}, True)
     with pytest.raises(schema.Error):
         schema.validate(shape, {'a': 1})
-
-
-def test_merge():
-    shape = (':merge', {'a': str, 'b': str}, {'b': int})
-    schema.validate(shape, {'a': 'a', 'b': 1})
 
 
 def test_future_when_the_schema_is_a_future_type():
@@ -72,7 +66,7 @@ def test_future_fail():
 
 
 def test_maybe():
-    shape = (':maybe', str)
+    shape = (':M', str)
     assert schema.validate(shape, 'foo') == 'foo'
     assert schema.validate(shape, None) is None
     with pytest.raises(schema.Error):
@@ -81,23 +75,37 @@ def test_maybe():
 
 def test_method():
     class Foo(object):
-        @schema.check(int, _return=str)
-        def bar(self, x):
-            return str(x)
+        @schema.check
+        def bar(self, x: int) -> str:
+            if x == 0:
+                return 0
+            else:
+                return str(x)
     assert Foo().bar(1) == '1'
+    with pytest.raises(Exception):
+        Foo().bar('1')
+    with pytest.raises(Exception):
+        Foo().bar(0)
 
 
 def test_generator_method():
     class Foo(object):
-        @schema.check(int, _yield=str)
-        def bar(self, x):
-            yield str(x)
+        @schema.check(yields=str)
+        def bar(self, x: int):
+            if x == 0:
+                yield 0
+            else:
+                yield str(x)
     assert next(Foo().bar(1)) == '1'
+    with pytest.raises(Exception):
+        next(Foo().bar('1'))
+    with pytest.raises(Exception):
+        next(Foo().bar(0))
 
 
 def test_kwargs():
-    @schema.check(_kwargs={str: int})
-    def fn(**kw):
+    @schema.check
+    def fn(**kw: {str: int}):
         assert 'a' in kw and 'b' in kw
         return True
     fn(a=1, b=2)
@@ -106,49 +114,57 @@ def test_kwargs():
 
 
 def test_args():
-    @schema.check(_args=[int])
-    def fn(*a):
+    @schema.check
+    def fn(*a: [int]):
         return True
     fn(1, 2)
     with pytest.raises(schema.Error):
         fn(1, 2.0)
 
 
-def test_fn_types():
-    shape = (':fn', (int, int), {'_return': str})
+def test_callable():
+    shape = {str: callable}
+    val = {'fn': lambda: None}
+    assert schema.validate(shape, val)['fn'] is val['fn']
+    with pytest.raises(Exception):
+        schema.validate(shape, {'not-fn': None})
 
-    @schema.check(int, int, _return=str)
-    def fn(x, y):
+
+def test_fn_types():
+    shape = (':fn', (int, int), {'returns': str})
+
+    @schema.check
+    def fn(x: int, y: int) -> str:
         pass
     assert schema.validate(shape, fn) is fn
 
-    @schema.check(int, float, _return=str)
-    def fn(x, y):
+    @schema.check
+    def fn(x: int, y: float) -> str:
         pass
     with pytest.raises(schema.Error):
         schema.validate(shape, fn) # pos arg 2 invalid
 
-    @schema.check(int, int, _return=float)
-    def fn(x, y):
+    @schema.check
+    def fn(x: int, y: int) -> float:
         pass
     with pytest.raises(schema.Error):
         schema.validate(shape, fn) # return invalid
 
-    @schema.check(int, int)
-    def fn(x, y):
+    @schema.check
+    def fn(x: int, y: int):
         pass
     with pytest.raises(schema.Error):
         schema.validate(shape, fn) # missing return shape
 
 
 def test_union_types():
-    shape = (':or', int, float)
+    shape = (':U', int, float)
     assert schema.validate(shape, 1) == 1
     assert schema.validate(shape, 1.0) == 1.0
     with pytest.raises(schema.Error):
-        schema.validate((':or', int, float), '1')
+        schema.validate((':U', int, float), '1')
 
-    shape = (':or', [int], {str: int})
+    shape = (':U', [int], {str: int})
     assert schema.validate(shape, [1]) == [1]
     assert schema.validate(shape, {'1': 2}) == {'1': 2}
     with pytest.raises(schema.Error):
@@ -194,10 +210,9 @@ def test_unicde_synonymous_with_str():
 
 
 def test_bytes_not_synonymous_with_str():
-    if six.PY3:
-        assert schema.validate(bytes, b'123') == b'123'
-        with pytest.raises(schema.Error):
-            schema.validate(str, b'123')
+    assert schema.validate(bytes, b'123') == b'123'
+    with pytest.raises(schema.Error):
+        schema.validate(str, b'123')
 
 
 def test_bytes_matches_str_schemas():
@@ -241,40 +256,34 @@ def test_object_list():
 
 
 def test_annotations_return():
-    if six.PY3:
-        def fn():
-            return 123
-        fn.__annotations__ = {'return': str}
-        fn = schema.check()(fn)
-        with pytest.raises(schema.Error):
-            fn()
+    def fn() -> str:
+        return 123
+    fn = schema.check()(fn)
+    with pytest.raises(schema.Error):
+        fn()
 
 
 def test_annotation_args():
-    if six.PY3:
-        def fn(x):
-            return str(x)
-        fn.__annotations__ = {'x': int, 'return': str}
-        fn = schema.check()(fn)
-        assert fn(1) == '1'
-        with pytest.raises(schema.Error):
-            fn(1.0)
+    def fn(x: int) -> str:
+        return str(x)
+    fn = schema.check()(fn)
+    assert fn(1) == '1'
+    with pytest.raises(schema.Error):
+        fn(1.0)
 
 
 def test_annotation_kwargs():
-    if six.PY3:
-        def fn(x=0):
-            return str(x)
-        fn.__annotations__ = {'x': int, 'return': str}
-        fn = schema.check()(fn)
-        assert fn(x=1) == '1'
-        with pytest.raises(schema.Error):
-            fn(x=1.0)
+    def fn(x: int = 0) -> str:
+        return str(x)
+    fn = schema.check()(fn)
+    assert fn(x=1) == '1'
+    with pytest.raises(schema.Error):
+        fn(x=1.0)
 
 
 def test_check_args_and_kwargs():
-    @schema.check(int, b=float, _return=str)
-    def fn(a, b=0):
+    @schema.check
+    def fn(a: int, b: float = 0) -> str:
         return str(a + b)
     assert fn(1) == '1'
     assert fn(1, b=.5) == '1.5'
@@ -289,16 +298,16 @@ def test_check_args_and_kwargs():
 
 
 def test_check_returns():
-    @schema.check(_return=str)
-    def badfn():
+    @schema.check
+    def badfn() -> str:
         return 0
     with pytest.raises(schema.Error):
         badfn()
 
 
 def test_check_generators():
-    @schema.check(int)
-    def main(x):
+    @schema.check
+    def main(x: int):
         yield
     next(main(1))
     with pytest.raises(schema.Error):
@@ -307,12 +316,12 @@ def test_check_generators():
 
 def test_check_coroutines():
     @tornado.gen.coroutine
-    @schema.check(int, _return=float)
-    def main(x):
+    @schema.check
+    def main(x: int) -> float:
         yield tornado.gen.moment
         if x > 0:
             x = float(x)
-        raise tornado.gen.Return(x)
+        return x
     assert tornado.ioloop.IOLoop.instance().run_sync(lambda: main(1)) == 1.0
     with pytest.raises(schema.Error):
         tornado.ioloop.IOLoop.instance().run_sync(lambda: main(1.0))
@@ -321,7 +330,7 @@ def test_check_coroutines():
 
 
 def test_check_yields_and_sends():
-    @schema.check(_send=int, _yield=str)
+    @schema.check(sends=int, yields=str)
     def main():
         val = yield 'a'
         if val > 0:
@@ -336,7 +345,7 @@ def test_check_yields_and_sends():
     gen = main()
     next(gen)
     with pytest.raises(schema.Error):
-        gen.send(-1) # violate _yield
+        gen.send(-1) # violate yields
 
     gen = main()
     next(gen)
@@ -409,15 +418,15 @@ def test_type_to_value():
 
 
 def test_nested_optional():
-    shape = {'a': {'b': (':optional', object, 'default-val')}}
+    shape = {'a': {'b': (':O', object, 'default-val')}}
     assert schema.validate(shape, {'a': {}}) == {'a': {'b': 'default-val'}}
-    shape = [{'name': (':optional', object, 'bob')}]
+    shape = [{'name': (':O', object, 'bob')}]
     assert schema.validate(shape, [{}]) == [{'name': 'bob'}]
 
 
 def test_optional_value_key_with_validation():
     shape = {'a': 'apple',
-             'b': [':optional', str, 'banana']}
+             'b': [':O', str, 'banana']}
     schema.validate(shape, {'a': 'apple'}) == {'a': 'apple', 'b': 'banana'}
     schema.validate(shape, {'a': 'apple', 'b': 'banana'}) == {'a': 'apple', 'b': 'banana'}
     with pytest.raises(schema.Error):

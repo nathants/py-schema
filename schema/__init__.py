@@ -1,4 +1,3 @@
-from __future__ import print_function, absolute_import
 import functools
 import inspect
 import pprint
@@ -9,10 +8,7 @@ import s.dicts
 import s.exceptions
 import s.func
 import s.strings
-import six
 import sys
-import tornado.concurrent
-import tornado.gen
 import traceback
 import types
 
@@ -20,11 +16,21 @@ import types
 disabled = False
 
 
-_schema_commands = (':or',
-                    ':fn',
-                    ':optional',
-                    ':maybe',
-                    ':merge')
+_schema_commands = (':U', # union
+                    ':O', # optional
+                    ':M', # maybe
+                    ':fn')
+
+
+json = (':U',
+        list,
+        str,
+        dict,
+        int,
+        float,
+        tuple,
+        bool,
+        type(None))
 
 
 def is_valid(schema, value):
@@ -59,8 +65,8 @@ def validate(schema, value, exact_match=False):
     >>> with pytest.raises(AssertionError):
     ...     validate(schema, [1])
 
-    ### union types with :or
-    >>> schema = (':or', int, float)
+    ### union types with :U
+    >>> schema = (':U', int, float)
     >>> assert validate(schema, 1) == 1
     >>> assert validate(schema, 1.0) == 1.0
     >>> with pytest.raises(AssertionError):
@@ -92,8 +98,8 @@ def validate(schema, value, exact_match=False):
     >>> with pytest.raises(AssertionError):
     ...     validate({'name': lambda x: x in ['john', 'jane']}, {'name': 'rose'})
 
-    # dicts with :optional k's provide a value for a missing key and validate provided keys
-    >>> schema = {'name': (':optional', str, 'jane')}
+    # dicts with :O k's provide a value for a missing key and validate provided keys
+    >>> schema = {'name': (':O', str, 'jane')}
     >>> assert validate(schema, {}) == {'name': 'jane'}
     >>> assert validate(schema, {'name': 'rose'}) == {'name': 'rose'}
     >>> with pytest.raises(AssertionError):
@@ -153,7 +159,7 @@ def _validate(schema, value, exact_match=False):
                 value = _check(schema, value)
             return value
     except AssertionError as e:
-        raise Error(*e.args)
+        raise Error(*e.args) from None
 
 
 def _formdent(x):
@@ -163,10 +169,7 @@ def _formdent(x):
 def _update_functions(schema):
     def fn(x):
         if isinstance(x, types.FunctionType):
-            if six.PY3:
-                filename, linenum = x.__code__.co_filename, x.__code__.co_firstlineno
-            else:
-                filename, linenum = x.func_code.co_filename, x.func_code.co_firstlineno
+            filename, linenum = x.__code__.co_filename, x.__code__.co_firstlineno
             x = 'lambda:{filename}:{linenum}'.format(**locals())
         return x
     return fn
@@ -179,10 +182,7 @@ def _updater(schema, value):
 def _helpful_message(schema, value):
     for fn in [x for x in s.seqs.flatten(schema) if isinstance(x, (types.FunctionType, types.LambdaType))]:
         try:
-            if six.PY2:
-                filename, linenum = fn.func_code.co_filename, fn.func_code.co_firstlineno
-            else:
-                filename, linenum = fn.__code__.co_filename, fn.__code__.co_firstlineno
+            filename, linenum = fn.__code__.co_filename, fn.__code__.co_firstlineno
             with open(filename) as f:
                 lines = f.read().splitlines()
             start = end = None
@@ -193,10 +193,7 @@ def _helpful_message(schema, value):
                     start = i
                     break
             if start is None:
-                if six.PY3:
-                    filename, linenum = fn.__code__.co_filename, fn.__code__.co_firstlineno
-                else:
-                    filename, linenum = fn.func_code.co_filename, fn.func_code.co_firstlineno
+                filename, linenum = fn.__code__.co_filename, fn.__code__.co_firstlineno
                 schema = 'function:{filename}:{linenum}'.format(**locals())
             else:
                 if any(x in lines[start] for x in ['{', '(', '[']):
@@ -255,8 +252,8 @@ def _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_
                             break
                     else:
                         raise AssertionError('{} <{}> is missing (key, value) pair: {} <{}>, {} <{}>'.format(value, type(value), k, type(k), v, type(v)))
-                elif isinstance(v, (list, tuple)) and v and v[0] == ':optional':
-                    assert len(v) == 3, ':optional schema should be (:optional, schema, default-value), not: {}'.format(v)
+                elif isinstance(v, (list, tuple)) and v and v[0] == ':O':
+                    assert len(v) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(v)
                     _, schema, default_value = v
                     value = s.dicts.merge(value, {k: _validate(schema, default_value)})
                 else: # TODO is it useful to optionally ignore missing keys in the value?
@@ -265,7 +262,7 @@ def _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_
 
 
 def _starts_with_keyword(x):
-    if x and isinstance(x[0], s.data.string_types) and x[0].startswith(':'):
+    if x and isinstance(x[0], str) and x[0].startswith(':'):
         return True
     else:
         return False
@@ -280,19 +277,15 @@ def _check(validator, value):
         elif isinstance(validator, (list, tuple)):
             assert isinstance(value, (list, tuple)) or _starts_with_keyword(validator), '{} <{}> is not a seq: {} <{}>'.format(value, type(value), validator, type(validator))
             if validator and validator[0] in _schema_commands:
-                if validator[0] == ':merge':
-                    assert len(validator) == 3, ':merge schema should be (:merge, dict1, dict2), not: {}'.format(validator)
-                    assert all(isinstance(x, dict) for x in validator[1:]), ':merge only works with two dicts, not: {}'.format(validator[1:])
-                    return _validate(s.dicts.merge(*validator[1:]), value)
-                elif validator[0] == ':optional':
-                    assert len(validator) == 3, ':optional schema should be (:optional, schema, default-value), not: {}'.format(validator)
+                if validator[0] == ':O':
+                    assert len(validator) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(validator)
                     return _check(validator[1], value)
-                elif validator[0] == ':maybe':
-                    assert len(validator) == 2, ':maybe schema should be (:maybe, schema), not: {}'.format(validator)
+                elif validator[0] == ':M':
+                    assert len(validator) == 2, ':M schema should be (:M, schema), not: {}'.format(validator)
                     if value is None:
                         return None
                     return _check(validator[1], value)
-                elif validator[0] == ':or':
+                elif validator[0] == ':U':
                     for v in validator[1:]:
                         tracebacks = []
                         try:
@@ -303,15 +296,9 @@ def _check(validator, value):
                 elif validator[0] == ':fn':
                     assert isinstance(value, types.FunctionType), '{} <{}> is not a function'.format(value, type(value))
                     assert len(validator) in [2, 3], ':fn schema should be (:fn, [<args>...], {<kwargs>: <val>, ...}) or (:fn, [<args>...]), not: {}'.format(validator)
-                    try:
-                        args, kwargs = validator[1:]
-                    except ValueError:
-                        [args], kwargs = validator[1:], {}
-                    try:
-                        _args, _kwargs = value._schema
-                    except ValueError:
-                        [_args], _kwargs = value._schema, {}
-                    assert _args == args, 'pos args {_args} did not match {args}'.format(**locals())
+                    args, kwargs = validator[1:]
+                    _args, _kwargs = value._schema
+                    assert tuple(_args) == tuple(args), 'pos args {_args} did not match {args}'.format(**locals())
                     assert _kwargs == kwargs, 'kwargs {_kwargs} did not match {kwargs}'.format(**locals())
                     return value
             elif isinstance(validator, list):
@@ -327,13 +314,12 @@ def _check(validator, value):
             assert isinstance(value, dict), '{} <{}> does not match schema {} <{}>'.format(value, type(value), validator, type(validator))
             return _validate(validator, value)
         elif isinstance(validator, type):
-            valid_str = isinstance(value, s.data.string_types) and validator in s.data.string_types
-            assert valid_str or isinstance(value, validator), '{} <{}> is not a <{}>'.format(value, type(value), validator)
+            assert isinstance(value, validator), '{} <{}> is not a <{}>'.format(value, type(value), validator)
             return value
-        elif isinstance(validator, types.FunctionType):
+        elif isinstance(validator, (types.FunctionType, type(callable))):
             assert validator(value), '{} <{}> failed validator {}'.format(value, type(value), s.func.source(validator))
             return value
-        elif isinstance(validator, s.data.json_types):
+        elif isinstance(validator, json[1:]):
             with s.exceptions.ignore(AttributeError):
                 value = value.decode('utf-8')
             assert value == validator, '{} <{}> != {} <{}>'.format(value, type(value), validator, type(validator))
@@ -347,47 +333,50 @@ def _prettify(x):
 
 
 def _get_schemas(fn, args, kwargs):
-    arg_schemas, kwarg_schemas = _read_annotations(fn, args, kwargs)
-    schemas = {'yield': kwarg_schemas.pop('_yield', object),
-               'send': kwarg_schemas.pop('_send', object),
-               'return': kwarg_schemas.pop('_return', object),
-               'args': kwarg_schemas.pop('_args', None),
-               'kwargs': kwarg_schemas.pop('_kwargs', None)}
-    schemas['arg'], schemas['kwarg'] = arg_schemas, kwarg_schemas
+    arg_schemas, kwarg_schemas, return_schema = _read_annotations(fn, args, kwargs)
+    schemas = {'yields': kwarg_schemas.pop('yields', object),
+               'sends': kwarg_schemas.pop('sends', object),
+               'returns': kwarg_schemas.pop('returns', return_schema),
+               'args': kwarg_schemas.pop('args', None),
+               'kwargs': kwarg_schemas.pop('kwargs', None),
+               'arg': arg_schemas,
+               'kwarg': kwarg_schemas}
     return schemas
 
 
 def _read_annotations(fn, arg_schemas, kwarg_schemas):
-    if not arg_schemas and sys.version_info.major == 3:
+    if not arg_schemas:
         sig = inspect.signature(fn)
         arg_schemas = [x.annotation
                        for x in sig.parameters.values()
                        if x.default is inspect._empty
                        and x.annotation is not inspect._empty
                        and x.kind is x.POSITIONAL_OR_KEYWORD]
-        val = {x.name: x.annotation
-               for x in sig.parameters.values()
-               if x.default is not inspect._empty
-               or x.kind is x.KEYWORD_ONLY
-               and x.annotation is not inspect._empty}
-        val = s.dicts.merge(val,
-                            {'_args': x.annotation
-                             for x in sig.parameters.values()
-                             if x.annotation is not inspect._empty
-                             and x.kind is x.VAR_POSITIONAL})
-        val = s.dicts.merge(val,
-                            {'_kwargs': x.annotation
-                             for x in sig.parameters.values()
-                             if x.annotation is not inspect._empty
-                             and x.kind is x.VAR_KEYWORD})
-        kwarg_schemas = s.dicts.merge(kwarg_schemas, val)
-        if sig.return_annotation is not inspect._empty:
-            kwarg_schemas['_return'] = sig.return_annotation
-    assert arg_schemas or kwarg_schemas, 'you asked to check, but provided no schemas for: {}'.format(s.func.name(fn))
-    return arg_schemas, kwarg_schemas
+    val = {x.name: x.annotation
+           for x in sig.parameters.values()
+           if x.default is not inspect._empty
+           or x.kind is x.KEYWORD_ONLY
+           and x.annotation is not inspect._empty}
+    val = s.dicts.merge(val,
+                        {'args': x.annotation
+                         for x in sig.parameters.values()
+                         if x.annotation is not inspect._empty
+                         and x.kind is x.VAR_POSITIONAL})
+    val = s.dicts.merge(val,
+                        {'kwargs': x.annotation
+                         for x in sig.parameters.values()
+                         if x.annotation is not inspect._empty
+                         and x.kind is x.VAR_KEYWORD})
+    kwarg_schemas = s.dicts.merge(kwarg_schemas, val)
+    if sig.return_annotation is not inspect._empty:
+        return_schema = sig.return_annotation
+    else:
+        return_schema = object
+    return arg_schemas, kwarg_schemas, return_schema
 
 
 def _check_args(args, kwargs, name, schemas):
+    print('check', args, kwargs, name, schemas)
     try:
         with s.exceptions.update(_prettify, AssertionError):
             # TODO better to use inspect.getcallargs() for this? would change the semantics of pos arg checking. hmmn...
@@ -413,7 +402,7 @@ def _check_args(args, kwargs, name, schemas):
                     raise AssertionError('cannot check {} for unknown key: {}={}'.format(name, k, v))
             return _args, _kwargs
     except AssertionError as e:
-        raise Error(*e.args)
+        raise Error(*e.args) from None
 
 
 def _fn_check(decoratee, name, schemas):
@@ -428,7 +417,7 @@ def _fn_check(decoratee, name, schemas):
                 args, kwargs = _check_args(args, kwargs, name, schemas)
         value = decoratee(*args, **kwargs)
         with s.exceptions.update('schema.check failed for return value of function:\n {}'.format(name), AssertionError):
-            output = validate(schemas['return'], value)
+            output = validate(schemas['returns'], value)
         return output
     return decorated
 
@@ -449,7 +438,7 @@ def _gen_check(decoratee, name, schemas):
         while True:
             if not first_send:
                 with s.exceptions.update('schema.check failed for send value of generator:\n {}'.format(name), AssertionError):
-                    to_send = validate(schemas['send'], to_send)
+                    to_send = validate(schemas['sends'], to_send)
             first_send = False
             try:
                 if send_exception:
@@ -458,10 +447,10 @@ def _gen_check(decoratee, name, schemas):
                 else:
                     to_yield = generator.send(to_send)
                 with s.exceptions.update('schema.check failed for yield value of generator:\n {}'.format(name), AssertionError):
-                    to_yield = validate(schemas['yield'], to_yield)
-            except (tornado.gen.Return, StopIteration) as e:
+                    to_yield = validate(schemas['yields'], to_yield)
+            except StopIteration as e:
                 with s.exceptions.update('schema.check failed for return value of generator:\n {}'.format(name), AssertionError):
-                    e.value = validate(schemas['return'], getattr(e, 'value', None))
+                    e.value = validate(schemas['returns'], getattr(e, 'value', None))
                 raise
             try:
                 to_send = yield to_yield
@@ -482,6 +471,6 @@ def check(*args, **kwargs):
             decorated = _gen_check(decoratee, name, schemas)
         else:
             decorated = _fn_check(decoratee, name, schemas)
-        decorated._schema = schemas['arg'], {k: v for k, v in list(schemas['kwarg'].items()) + [['_return', schemas['return']]]}
+        decorated._schema = schemas['arg'], {k: v for k, v in list(schemas['kwarg'].items()) + [['returns', schemas['returns']]]}
         return decorated
     return decorator
