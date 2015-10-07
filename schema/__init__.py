@@ -17,8 +17,8 @@ disabled = False
 
 
 _schema_commands = (':U', # union
+                    ':I', # intersection
                     ':O', # optional
-                    ':M', # maybe
                     ':fn')
 
 
@@ -280,19 +280,28 @@ def _check(validator, value):
                 if validator[0] == ':O':
                     assert len(validator) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(validator)
                     return _check(validator[1], value)
-                elif validator[0] == ':M':
-                    assert len(validator) == 2, ':M schema should be (:M, schema), not: {}'.format(validator)
-                    if value is None:
-                        return None
-                    return _check(validator[1], value)
                 elif validator[0] == ':U':
+                    tracebacks = []
                     for v in validator[1:]:
-                        tracebacks = []
                         try:
-                            return _check(v, value)
+                            value = _check(v, value)
                         except AssertionError as e:
                             tracebacks.append(traceback.format_exc())
-                    raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in validator[1:]]), '\n'.join(tracebacks)))
+                    if len(tracebacks) == len(validator[1:]):
+                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in validator[1:]]), '\n'.join(tracebacks)))
+                    else:
+                        return value
+                elif validator[0] == ':I':
+                    tracebacks = []
+                    for v in validator[1:]:
+                        try:
+                            value = _check(v, value)
+                        except AssertionError as e:
+                            tracebacks.append(traceback.format_exc())
+                    if tracebacks:
+                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in validator[1:]]), '\n'.join(tracebacks)))
+                    else:
+                        return value
                 elif validator[0] == ':fn':
                     assert isinstance(value, types.FunctionType), '{} <{}> is not a function'.format(value, type(value))
                     assert len(validator) in [2, 3], ':fn schema should be (:fn, [<args>...], {<kwargs>: <val>, ...}) or (:fn, [<args>...]), not: {}'.format(validator)
@@ -376,7 +385,6 @@ def _read_annotations(fn, arg_schemas, kwarg_schemas):
 
 
 def _check_args(args, kwargs, name, schemas):
-    print('check', args, kwargs, name, schemas)
     try:
         with s.exceptions.update(_prettify, AssertionError):
             # TODO better to use inspect.getcallargs() for this? would change the semantics of pos arg checking. hmmn...

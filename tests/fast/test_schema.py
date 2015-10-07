@@ -65,12 +65,45 @@ def test_future_fail():
         f2.result()
 
 
-def test_maybe():
-    shape = (':M', str)
+def test_union():
+    shape = (':U', str, None)
     assert schema.validate(shape, 'foo') == 'foo'
     assert schema.validate(shape, None) is None
     with pytest.raises(schema.Error):
         schema.validate(shape, True)
+
+
+def test_maybe_are_applied_in_order():
+    shape = (':U', {'name': (':O', str, 'bob')},
+                   {'name': str, 'num': (':O', int, 0)})
+    assert schema.validate(shape, {}) == {'name': 'bob', 'num': 0}
+    with pytest.raises(Exception):
+        schema.validate(shape, {'name': 123})
+
+
+def test_intersection_are_applied_in_order():
+    shape = (':I', {'name': (':O', str, 'bob')},
+                   {'name': str, 'num': (':O', int, 0)})
+    assert schema.validate(shape, {}) == {'name': 'bob', 'num': 0}
+    with pytest.raises(Exception):
+        schema.validate(shape, {'name': 123})
+
+
+def test_union_passes_with_either():
+    shape = (':U', {'name': str},
+                   {'name': int})
+    assert schema.validate(shape, {'name': 'bob'}) == {'name': 'bob'}
+    assert schema.validate(shape, {'name': 123}) == {'name': 123}
+
+
+def test_intersection_passes_with_both():
+    shape = (':I', {'name': str},
+                   {'name': (':U', 'bob', 'jane')})
+    assert schema.validate(shape, {'name': 'jane'})
+    with pytest.raises(Exception):
+        schema.validate(shape, {'name': 123})
+    with pytest.raises(Exception):
+        schema.validate(shape, {'name': 'other'})
 
 
 def test_method():
