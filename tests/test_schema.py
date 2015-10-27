@@ -1,5 +1,5 @@
 import pytest
-import s.dicts
+import util.dicts
 import schema
 import tornado.concurrent
 import tornado.ioloop
@@ -11,7 +11,7 @@ def test_none_as_schema():
     schema.validate(shape, {'a': None})
 
 
-def test_none_as_schema():
+def test_false_as_schema():
     shape = {str: False}
     schema.validate(shape, {'a': False})
 
@@ -611,12 +611,12 @@ def test_complex_types():
                         'where': [77, 44]}]}
     schema.validate(shape, data)
     with pytest.raises(schema.Error):
-        schema.validate(shape, s.dicts.merge(data, {'name': 123}))
+        schema.validate(shape, util.dicts.merge(data, {'name': 123}))
     with pytest.raises(schema.Error):
-        schema.validate(shape, s.dicts.merge(data, {'events': [None]}))
+        schema.validate(shape, util.dicts.merge(data, {'events': [None]}))
     with pytest.raises(schema.Error):
-        schema.validate(shape, s.dicts.merge(data, {'events': [None] + data['events']}))
+        schema.validate(shape, util.dicts.merge(data, {'events': [None] + data['events']}))
     with pytest.raises(schema.Error):
-        schema.validate(shape, s.dicts.merge(data, {'events': [{'what': 'shopping',
-                                                                'when': 123.11,
-                                                                'where': [0]}]}))
+        schema.validate(shape, util.dicts.merge(data, {'events': [{'what': 'shopping',
+                                                                   'when': 123.11,
+                                                                   'where': [0]}]}))
