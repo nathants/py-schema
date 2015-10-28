@@ -420,8 +420,9 @@ def _check_args(args, kwargs, name, schemas):
 def _fn_check(decoratee, name, schemas):
     @functools.wraps(decoratee)
     def decorated(*args, **kwargs):
+        args = util.data.freeze(args)
+        kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for function:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
-            # TODO dry this out with _gen_check()
             if args and inspect.ismethod(getattr(args[0], decoratee.__name__, None)):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)
                 args = [args[0]] + a
@@ -437,6 +438,8 @@ def _fn_check(decoratee, name, schemas):
 def _gen_check(decoratee, name, schemas):
     @functools.wraps(decoratee)
     def decorated(*args, **kwargs):
+        args = util.data.freeze(args)
+        kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for generator:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
             if args and inspect.ismethod(getattr(args[0], decoratee.__name__, None)):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)
