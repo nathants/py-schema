@@ -141,29 +141,25 @@ def validate(schema, value, exact_match=False):
 
 
 def _validate(schema, value, exact_match=False):
-    try:
-        with util.exceptions.update(_updater(schema, value), AssertionError):
-            # TODO does this block belong in _check()? should validate and _check even be seperate?
-            value_is_a_future = util.async.is_future(value)
-            schema_is_a_future_type = util.async.is_future(schema) and type(schema) is type
-            if value_is_a_future and not schema_is_a_future_type:
-                future = type(value)()
-                @value.add_done_callback
-                def fn(f):
-                    try:
-                        future.set_result(_validate(schema, f.result()))
-                    except Exception as e:
-                        future.set_exception(e)
-                return future
-            elif isinstance(schema, dict):
-                assert isinstance(value, dict), 'value {} <{}> should be a dict for schema: {} <{}>'.format(value, type(value), schema, type(schema))
-                value, validated_schema_items = _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_match)
-                value = _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_items)
-            else:
-                value = _check(schema, value)
-            return value
-    except AssertionError as e:
-        raise Error(*e.args) from None
+    with util.exceptions.update(_updater(schema, value), AssertionError):
+        # TODO does this block belong in _check()? should validate and _check even be seperate?
+        value_is_a_future = util.async.is_future(value)
+        schema_is_a_future_type = util.async.is_future(schema) and type(schema) is type
+        if value_is_a_future and not schema_is_a_future_type:
+            future = type(value)()
+            @value.add_done_callback
+            def fn(f):
+                try:
+                    future.set_result(_validate(schema, f.result()))
+                except Exception as e:
+                    future.set_exception(e)
+            return future
+        elif isinstance(schema, dict):
+            assert isinstance(value, dict), 'value {} <{}> should be a dict for schema: {} <{}>'.format(value, type(value), schema, type(schema))
+            value, validated_schema_items = _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_match)
+            return _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_items)
+        else:
+            return _check(schema, value)
 
 
 def _formdent(x):
@@ -219,10 +215,6 @@ def _helpful_message(schema, value):
         util.strings.indent(pprint.pformat(value, width=1), 2),
         util.strings.indent(schema, 2),
     )
-
-
-class Error(AssertionError):
-    pass
 
 
 def _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_match):
@@ -389,32 +381,29 @@ def _read_annotations(fn, arg_schemas, kwarg_schemas):
 
 
 def _check_args(args, kwargs, name, schemas):
-    try:
-        with util.exceptions.update(_prettify, AssertionError):
-            # TODO better to use inspect.getcallargs() for this? would change the semantics of pos arg checking. hmmn...
-            # look at the todo in util.web.post for an example.
-            assert len(schemas['arg']) == len(args) or schemas['args'], 'you asked to check {} for {} pos args, but {} were provided\nargs:\n{}\nschema:\n{}'.format(
-                name, len(schemas['arg']), len(args), pprint.pformat(args, width=1), pprint.pformat(schemas, width=1)
-            )
-            _args = []
-            for i, (schema, arg) in enumerate(zip(schemas['arg'], args)):
-                with util.exceptions.update('pos arg num:\n  {}'.format(i), AssertionError):
-                    _args.append(validate(schema, arg))
-            if schemas['args'] and args[len(schemas['arg']):]:
-                _args += validate(schemas['args'], args[len(schemas['arg']):])
-            _kwargs = {}
-            for k, v in kwargs.items():
-                if k in schemas['kwarg']:
-                    with util.exceptions.update('keyword arg:\n  {}'.format(k), AssertionError):
-                        _kwargs[k] = validate(schemas['kwarg'][k], v)
-                elif schemas['kwargs']:
-                    with util.exceptions.update('keyword args schema failed.', AssertionError):
-                        _kwargs[k] = validate(schemas['kwargs'], {k: v})[k]
-                else:
-                    raise AssertionError('cannot check {} for unknown key: {}={}'.format(name, k, v))
-            return _args, _kwargs
-    except AssertionError as e:
-        raise Error(*e.args) from None
+    with util.exceptions.update(_prettify, AssertionError):
+        # TODO better to use inspect.getcallargs() for this? would change the semantics of pos arg checking. hmmn...
+        # look at the todo in util.web.post for an example.
+        assert len(schemas['arg']) == len(args) or schemas['args'], 'you asked to check {} for {} pos args, but {} were provided\nargs:\n{}\nschema:\n{}'.format(
+            name, len(schemas['arg']), len(args), pprint.pformat(args, width=1), pprint.pformat(schemas, width=1)
+        )
+        _args = []
+        for i, (schema, arg) in enumerate(zip(schemas['arg'], args)):
+            with util.exceptions.update('pos arg num:\n  {}'.format(i), AssertionError):
+                _args.append(validate(schema, arg))
+        if schemas['args'] and args[len(schemas['arg']):]:
+            _args += validate(schemas['args'], args[len(schemas['arg']):])
+        _kwargs = {}
+        for k, v in kwargs.items():
+            if k in schemas['kwarg']:
+                with util.exceptions.update('keyword arg:\n  {}'.format(k), AssertionError):
+                    _kwargs[k] = validate(schemas['kwarg'][k], v)
+            elif schemas['kwargs']:
+                with util.exceptions.update('keyword args schema failed.', AssertionError):
+                    _kwargs[k] = validate(schemas['kwargs'], {k: v})[k]
+            else:
+                raise AssertionError('cannot check {} for unknown key: {}={}'.format(name, k, v))
+        return _args, _kwargs
 
 
 def _fn_check(decoratee, name, schemas):
