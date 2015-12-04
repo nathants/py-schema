@@ -226,10 +226,10 @@ def _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_matc
         object_match = object in schema
         if value_match or type_match or object_match:
             key = k if value_match else type(k) if type_match else object
-            validator = schema[key]
-            validated_schema_items.append((key, validator))
+            _schema = schema[key]
+            validated_schema_items.append((key, _schema))
             with util.exceptions.update("key:\n  {}".format(k), AssertionError):
-                val[k] = _check(validator, v)
+                val[k] = _check(_schema, v)
         elif exact_match:
             raise AssertionError('{} <{}> does not match schema keys: {}'.format(k, type(k), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema.keys()])))
 
@@ -264,73 +264,73 @@ def _starts_with_keyword(x):
         return False
 
 
-def _check(validator, value):
-    with util.exceptions.update(_updater(validator, value), AssertionError):
+def _check(schema, value):
+    with util.exceptions.update(_updater(schema, value), AssertionError):
         # TODO break this up into well named pieces
-        assert not isinstance(validator, set), 'a set cannot be a validator: {}'.format(validator)
-        if validator is object:
+        assert not isinstance(schema, set), 'a set cannot be a schema: {}'.format(schema)
+        if schema is object:
             return value
-        elif isinstance(validator, (list, tuple)):
-            assert isinstance(value, (list, tuple)) or _starts_with_keyword(validator), '{} <{}> is not a seq: {} <{}>'.format(value, type(value), validator, type(validator))
-            if validator and validator[0] in _schema_commands:
-                if validator[0] == ':O':
-                    assert len(validator) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(validator)
-                    return _check(validator[1], value)
-                elif validator[0] == ':U':
+        elif isinstance(schema, (list, tuple)):
+            assert isinstance(value, (list, tuple)) or _starts_with_keyword(schema), '{} <{}> is not a seq: {} <{}>'.format(value, type(value), schema, type(schema))
+            if schema and schema[0] in _schema_commands:
+                if schema[0] == ':O':
+                    assert len(schema) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(schema)
+                    return _check(schema[1], value)
+                elif schema[0] == ':U':
                     tracebacks = []
-                    for v in validator[1:]:
+                    for v in schema[1:]:
                         try:
                             value = _check(v, value)
                         except AssertionError as e:
                             tracebacks.append(traceback.format_exc())
-                    if len(tracebacks) == len(validator[1:]):
-                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in validator[1:]]), '\n'.join(tracebacks)))
+                    if len(tracebacks) == len(schema[1:]):
+                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
                     else:
                         return value
-                elif validator[0] == ':I':
+                elif schema[0] == ':I':
                     tracebacks = []
-                    for v in validator[1:]:
+                    for v in schema[1:]:
                         try:
                             value = _check(v, value)
                         except AssertionError as e:
                             tracebacks.append(traceback.format_exc())
                     if tracebacks:
-                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in validator[1:]]), '\n'.join(tracebacks)))
+                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
                     else:
                         return value
-                elif validator[0] == ':fn':
+                elif schema[0] == ':fn':
                     assert isinstance(value, types.FunctionType), '{} <{}> is not a function'.format(value, type(value))
-                    assert len(validator) in [2, 3], ':fn schema should be (:fn, [<args>...], {<kwargs>: <val>, ...}) or (:fn, [<args>...]), not: {}'.format(validator)
-                    args, kwargs = validator[1:]
+                    assert len(schema) in [2, 3], ':fn schema should be (:fn, [<args>...], {<kwargs>: <val>, ...}) or (:fn, [<args>...]), not: {}'.format(schema)
+                    args, kwargs = schema[1:]
                     _args, _kwargs = value._schema
                     assert tuple(_args) == tuple(args), 'pos args {_args} did not match {args}'.format(**locals())
                     assert _kwargs == kwargs, 'kwargs {_kwargs} did not match {kwargs}'.format(**locals())
                     return value
-            elif isinstance(validator, list):
-                if not validator:
+            elif isinstance(schema, list):
+                if not schema:
                     assert not value, 'you schema is an empty sequence, but this is not empty: {}'.format(value)
                 elif value:
-                    assert len(validator) == 1, 'list validators represent variable length iterables and must contain a single validator: {}'.format(validator)
-                return [_check(validator[0], v) for v in value]
-            elif isinstance(validator, tuple):
-                assert len(validator) == len(value), '{} <{}> mismatched length of validator {} <{}>'.format(value, type(value), validator, type(validator))
-                return [_check(_validator, _val) for _validator, _val in zip(validator, value)]
-        elif isinstance(validator, dict):
-            assert isinstance(value, dict), '{} <{}> does not match schema {} <{}>'.format(value, type(value), validator, type(validator))
-            return _validate(validator, value)
-        elif isinstance(validator, type):
-            assert isinstance(value, validator), '{} <{}> is not a <{}>'.format(value, type(value), validator)
+                    assert len(schema) == 1, 'list schemas represent variable length iterables and must contain a single schema: {}'.format(schema)
+                return [_check(schema[0], v) for v in value]
+            elif isinstance(schema, tuple):
+                assert len(schema) == len(value), '{} <{}> mismatched length of schema {} <{}>'.format(value, type(value), schema, type(schema))
+                return [_check(_schema, _value) for _schema, _value in zip(schema, value)]
+        elif isinstance(schema, dict):
+            assert isinstance(value, dict), '{} <{}> does not match schema {} <{}>'.format(value, type(value), schema, type(schema))
+            return _validate(schema, value)
+        elif isinstance(schema, type):
+            assert isinstance(value, schema), '{} <{}> is not a <{}>'.format(value, type(value), schema)
             return value
-        elif isinstance(validator, (types.FunctionType, type(callable))):
-            assert validator(value), '{} <{}> failed validator {}'.format(value, type(value), util.func.source(validator))
+        elif isinstance(schema, (types.FunctionType, type(callable))):
+            assert schema(value), '{} <{}> failed schema {}'.format(value, type(value), util.func.source(schema))
             return value
-        elif isinstance(validator, json[1:]):
+        elif isinstance(schema, json[1:]):
             with util.exceptions.ignore(AttributeError):
                 value = value.decode('utf-8')
-            assert value == validator, '{} <{}> != {} <{}>'.format(value, type(value), validator, type(validator))
+            assert value == schema, '{} <{}> != {} <{}>'.format(value, type(value), schema, type(schema))
             return value
         else:
-            raise AssertionError('bad validator {} <{}>'.format(validator, type(validator)))
+            raise AssertionError('bad schema {} <{}>'.format(schema, type(schema)))
 
 
 def _prettify(x):
