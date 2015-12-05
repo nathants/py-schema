@@ -141,8 +141,10 @@ def validate(schema, value, exact_match=False):
 
 
 def _validate(schema, value, exact_match=False):
+    assert not isinstance(schema, set), 'a set cannot be a schema: {}'.format(schema)
     with util.exceptions.update(_updater(schema, value), AssertionError):
-        # TODO does this block belong in _check()? should validate and _check even be seperate?
+        # TODO break this up into well named pieces
+        # TODO replace long lists of conditionals with type based lookup in dicts. falls back on isinstance based looks? ugh. subclasses.
         value_is_a_future = util.async.is_future(value)
         schema_is_a_future_type = util.async.is_future(schema) and type(schema) is type
         if value_is_a_future and not schema_is_a_future_type:
@@ -155,11 +157,108 @@ def _validate(schema, value, exact_match=False):
                     future.set_exception(e)
             return future
         elif isinstance(schema, dict):
-            assert isinstance(value, dict), 'value {} <{}> should be a dict for schema: {} <{}>'.format(value, type(value), schema, type(schema))
+            assert isinstance(value, dict), '{} <{}> does not match schema {} <{}>'.format(value, type(value), schema, type(schema))
             value, validated_schema_items = _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_match)
             return _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_items)
+        elif schema is object:
+            return value
+        elif isinstance(schema, (list, tuple)):
+            assert isinstance(value, (list, tuple)) or _starts_with_keyword(schema), '{} <{}> is not a seq: {} <{}>'.format(value, type(value), schema, type(schema))
+            if schema and schema[0] in _schema_commands:
+                if schema[0] == ':O':
+                    assert len(schema) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(schema)
+                    return _validate(schema[1], value)
+                elif schema[0] == ':U':
+                    tracebacks = []
+                    for v in schema[1:]:
+                        try:
+                            value = _validate(v, value)
+                        except AssertionError as e:
+                            tracebacks.append(traceback.format_exc())
+                    if len(tracebacks) == len(schema[1:]):
+                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
+                    else:
+                        return value
+                elif schema[0] == ':I':
+                    tracebacks = []
+                    for v in schema[1:]:
+                        try:
+                            value = _validate(v, value)
+                        except AssertionError as e:
+                            tracebacks.append(traceback.format_exc())
+                    if tracebacks:
+                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
+                    else:
+                        return value
+                elif schema[0] == ':fn':
+                    assert isinstance(value, types.FunctionType), '{} <{}> is not a function'.format(value, type(value))
+                    assert len(schema) in [2, 3], ':fn schema should be (:fn, [<args>...], {<kwargs>: <val>, ...}) or (:fn, [<args>...]), not: {}'.format(schema)
+                    args, kwargs = schema[1:]
+                    _args, _kwargs = value._schema
+                    assert tuple(_args) == tuple(args), 'pos args {_args} did not match {args}'.format(**locals())
+                    assert _kwargs == kwargs, 'kwargs {_kwargs} did not match {kwargs}'.format(**locals())
+                    return value
+            elif isinstance(schema, list):
+                if not schema:
+                    assert not value, 'you schema is an empty sequence, but this is not empty: {}'.format(value)
+                elif value:
+                    assert len(schema) == 1, 'list schemas represent variable length iterables and must contain a single schema: {}'.format(schema)
+                return [_validate(schema[0], v) for v in value]
+            elif isinstance(schema, tuple):
+                assert len(schema) == len(value), '{} <{}> mismatched length of schema {} <{}>'.format(value, type(value), schema, type(schema))
+                return [_validate(_schema, _value) for _schema, _value in zip(schema, value)]
+        elif isinstance(schema, type):
+            assert isinstance(value, schema), '{} <{}> is not a <{}>'.format(value, type(value), schema)
+            return value
+        elif isinstance(schema, (types.FunctionType, type(callable))):
+            assert schema(value), '{} <{}> failed schema {}'.format(value, type(value), util.func.source(schema))
+            return value
+        elif isinstance(schema, json[1:]):
+            with util.exceptions.ignore(AttributeError):
+                value = value.decode('utf-8')
+            assert value == schema, '{} <{}> != {} <{}>'.format(value, type(value), schema, type(schema))
+            return value
         else:
-            return _check(schema, value)
+            raise AssertionError('bad schema {} <{}>'.format(schema, type(schema)))
+
+
+def _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_match):
+    validated_schema_items = []
+    val = {}
+    for k, v in value.items():
+        value_match = k in schema
+        type_match = type(k) in [x for x in schema if isinstance(x, type)]
+        object_match = object in schema
+        if value_match or type_match or object_match:
+            key = k if value_match else type(k) if type_match else object
+            _schema = schema[key]
+            validated_schema_items.append((key, _schema))
+            with util.exceptions.update("key:\n  {}".format(k), AssertionError):
+                val[k] = _validate(_schema, v)
+        elif exact_match:
+            raise AssertionError('{} <{}> does not match schema keys: {}'.format(k, type(k), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema.keys()])))
+    return val, validated_schema_items
+
+
+def _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_items):
+    if value or not {type(x) for x in schema.keys()} == {type}: # if schema keys are all types, and value is empty, return
+        for k, v in schema.items():
+            if k not in value and (k, v) not in validated_schema_items: # only check schema items if they haven't already been satisfied
+                if isinstance(k, type): # if a type key is missing, look for an item that satisfies it
+                    for vk, vv in value.items():
+                        with util.exceptions.ignore(AssertionError):
+                            _validate(k, vk)
+                            _validate(v, vv)
+                            break
+                    else:
+                        raise AssertionError('{} <{}> is missing (key, value) pair: {} <{}>, {} <{}>'.format(value, type(value), k, type(k), v, type(v)))
+                elif isinstance(v, (list, tuple)) and v and v[0] == ':O':
+                    assert len(v) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(v)
+                    _, schema, default_value = v
+                    value = util.dicts.merge(value, {k: _validate(schema, default_value)})
+                else: # TODO is it useful to optionally ignore missing keys in the value?
+                    raise AssertionError('{} <{}> is missing required key: {} <{}>'.format(value, type(value), k, type(k)))
+    return value
 
 
 def _formdent(x):
@@ -217,120 +316,11 @@ def _helpful_message(schema, value):
     )
 
 
-def _check_for_items_in_value_that_dont_satisfy_schema(schema, value, exact_match):
-    validated_schema_items = []
-    val = {}
-    for k, v in value.items():
-        value_match = k in schema
-        type_match = type(k) in [x for x in schema if isinstance(x, type)]
-        object_match = object in schema
-        if value_match or type_match or object_match:
-            key = k if value_match else type(k) if type_match else object
-            _schema = schema[key]
-            validated_schema_items.append((key, _schema))
-            with util.exceptions.update("key:\n  {}".format(k), AssertionError):
-                val[k] = _check(_schema, v)
-        elif exact_match:
-            raise AssertionError('{} <{}> does not match schema keys: {}'.format(k, type(k), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema.keys()])))
-
-    return val, validated_schema_items
-
-
-def _check_for_items_in_schema_missing_in_value(schema, value, validated_schema_items):
-    if value or not {type(x) for x in schema.keys()} == {type}: # if schema keys are all types, and value is empty, return
-        for k, v in schema.items():
-            if k not in value and (k, v) not in validated_schema_items: # only check schema items if they haven't already been satisfied
-                if isinstance(k, type): # if a type key is missing, look for an item that satisfies it
-                    for vk, vv in value.items():
-                        with util.exceptions.ignore(AssertionError):
-                            _validate(k, vk)
-                            _validate(v, vv)
-                            break
-                    else:
-                        raise AssertionError('{} <{}> is missing (key, value) pair: {} <{}>, {} <{}>'.format(value, type(value), k, type(k), v, type(v)))
-                elif isinstance(v, (list, tuple)) and v and v[0] == ':O':
-                    assert len(v) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(v)
-                    _, schema, default_value = v
-                    value = util.dicts.merge(value, {k: _validate(schema, default_value)})
-                else: # TODO is it useful to optionally ignore missing keys in the value?
-                    raise AssertionError('{} <{}> is missing required key: {} <{}>'.format(value, type(value), k, type(k)))
-    return value
-
-
 def _starts_with_keyword(x):
     if x and isinstance(x[0], str) and x[0].startswith(':'):
         return True
     else:
         return False
-
-
-def _check(schema, value):
-    with util.exceptions.update(_updater(schema, value), AssertionError):
-        # TODO break this up into well named pieces
-        assert not isinstance(schema, set), 'a set cannot be a schema: {}'.format(schema)
-        if schema is object:
-            return value
-        elif isinstance(schema, (list, tuple)):
-            assert isinstance(value, (list, tuple)) or _starts_with_keyword(schema), '{} <{}> is not a seq: {} <{}>'.format(value, type(value), schema, type(schema))
-            if schema and schema[0] in _schema_commands:
-                if schema[0] == ':O':
-                    assert len(schema) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(schema)
-                    return _check(schema[1], value)
-                elif schema[0] == ':U':
-                    tracebacks = []
-                    for v in schema[1:]:
-                        try:
-                            value = _check(v, value)
-                        except AssertionError as e:
-                            tracebacks.append(traceback.format_exc())
-                    if len(tracebacks) == len(schema[1:]):
-                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
-                    else:
-                        return value
-                elif schema[0] == ':I':
-                    tracebacks = []
-                    for v in schema[1:]:
-                        try:
-                            value = _check(v, value)
-                        except AssertionError as e:
-                            tracebacks.append(traceback.format_exc())
-                    if tracebacks:
-                        raise AssertionError('{} <{}> did not match any of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
-                    else:
-                        return value
-                elif schema[0] == ':fn':
-                    assert isinstance(value, types.FunctionType), '{} <{}> is not a function'.format(value, type(value))
-                    assert len(schema) in [2, 3], ':fn schema should be (:fn, [<args>...], {<kwargs>: <val>, ...}) or (:fn, [<args>...]), not: {}'.format(schema)
-                    args, kwargs = schema[1:]
-                    _args, _kwargs = value._schema
-                    assert tuple(_args) == tuple(args), 'pos args {_args} did not match {args}'.format(**locals())
-                    assert _kwargs == kwargs, 'kwargs {_kwargs} did not match {kwargs}'.format(**locals())
-                    return value
-            elif isinstance(schema, list):
-                if not schema:
-                    assert not value, 'you schema is an empty sequence, but this is not empty: {}'.format(value)
-                elif value:
-                    assert len(schema) == 1, 'list schemas represent variable length iterables and must contain a single schema: {}'.format(schema)
-                return [_check(schema[0], v) for v in value]
-            elif isinstance(schema, tuple):
-                assert len(schema) == len(value), '{} <{}> mismatched length of schema {} <{}>'.format(value, type(value), schema, type(schema))
-                return [_check(_schema, _value) for _schema, _value in zip(schema, value)]
-        elif isinstance(schema, dict):
-            assert isinstance(value, dict), '{} <{}> does not match schema {} <{}>'.format(value, type(value), schema, type(schema))
-            return _validate(schema, value)
-        elif isinstance(schema, type):
-            assert isinstance(value, schema), '{} <{}> is not a <{}>'.format(value, type(value), schema)
-            return value
-        elif isinstance(schema, (types.FunctionType, type(callable))):
-            assert schema(value), '{} <{}> failed schema {}'.format(value, type(value), util.func.source(schema))
-            return value
-        elif isinstance(schema, json[1:]):
-            with util.exceptions.ignore(AttributeError):
-                value = value.decode('utf-8')
-            assert value == schema, '{} <{}> != {} <{}>'.format(value, type(value), schema, type(schema))
-            return value
-        else:
-            raise AssertionError('bad schema {} <{}>'.format(schema, type(schema)))
 
 
 def _prettify(x):
