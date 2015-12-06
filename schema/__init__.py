@@ -149,7 +149,30 @@ def _validate(schema, value, exact_match=False):
             return future
         elif isinstance(schema, dict):
             assert isinstance(value, dict), '{} <{}> does not match schema: {} <{}>'.format(value, type(value), schema, type(schema))
-            return _check_dict(schema, value, exact_match)
+            # if schema keys are all types, and _value is empty, return. ie, type keys are optional, so {} is a valid {int: int}
+            if value == {} and {type(x) for x in schema} == {type}:
+                return {}
+            else:
+                # check for items in value that dont satisfy schema, dropping unknown keys unless exact_match=true
+                _value = {}
+                for k, v in value.items():
+                    value_match = k in schema
+                    type_match = type(k) in [x for x in schema if isinstance(x, type)]
+                    any_match = object in schema
+                    if value_match or type_match or any_match:
+                        _schema = schema[k if value_match else type(k) if type_match else object]
+                        _value[k] = _validate(_schema, v)
+                    elif exact_match:
+                        raise AssertionError('{} <{}> does not match schema keys: {}'.format(k, type(k), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema])))
+                # check for items in schema missing in value, filling in optional value
+                for k, v in schema.items():
+                    if k not in _value:
+                        if isinstance(v, (list, tuple)) and v and v[0] == ':O':
+                            assert len(v) == 3, ':O schema should be [:O, schema, default-value], not: {}'.format(v)
+                            _value[k] = _validate(*v[1:])
+                        elif not isinstance(k, type):
+                            raise AssertionError('{} <{}> is missing required key: {} <{}>'.format(_value, type(_value), k, type(k)))
+                return _value
         elif schema is object:
             return value
         # TODO flatten this into un-nested conditionals. perf hit?
@@ -207,33 +230,6 @@ def _validate(schema, value, exact_match=False):
                 value = value.decode('utf-8')
             assert value == schema, '{} <{}> does not equal: {} <{}>'.format(value, type(value), schema, type(schema))
             return value
-
-
-def _check_dict(schema, value, exact_match):
-    # if schema keys are all types, and _value is empty, return. ie, type keys are optional, so {} is a valid {int: int}
-    if not value and {type(x) for x in schema} == {type}:
-        return {}
-    # check for items in value that dont satisfy schema, dropping unknown keys unless exact_match=true
-    _value = {}
-    for k, v in value.items():
-        value_match = k in schema
-        type_match = type(k) in [x for x in schema if isinstance(x, type)]
-        object_match = object in schema
-        if value_match or type_match or object_match:
-            _schema = schema[k if value_match else type(k) if type_match else object]
-            _value[k] = _validate(_schema, v)
-        elif exact_match:
-            raise AssertionError('{} <{}> does not match schema keys: {}'.format(k, type(k), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema])))
-    # check for items in schema missing in value, filling in optional value
-    for schema_k, schema_v in schema.items():
-        if schema_k not in _value:
-            if isinstance(schema_v, (list, tuple)) and schema_v and schema_v[0] == ':O':
-                assert len(schema_v) == 3, ':O schema should be (:O, schema, default-value), not: {}'.format(schema_v)
-                _, schema, default_value = schema_v
-                _value[schema_k] = _validate(schema, default_value)
-            elif not isinstance(schema_k, type):
-                raise AssertionError('{} <{}> is missing required key: {} <{}>'.format(_value, type(_value), schema_k, type(schema_k)))
-    return _value
 
 
 def _formdent(x):
