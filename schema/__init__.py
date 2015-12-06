@@ -1,6 +1,3 @@
-# TODO schema.check doesnt support switching between arg and kwarg at call time.
-# u have to use which ever way you defined the annotation. ie default value?
-# or actually is this a feature? helpful constraint?
 import functools
 import inspect
 import pprint
@@ -14,26 +11,16 @@ import util.strings
 import sys
 import traceback
 import types
+import os
 
 
-disabled = False
+disabled = os.environ.get('DISABLE_SCHEMA')
 
 
 _schema_commands = (':U', # union
                     ':I', # intersection
                     ':O', # optional
                     ':fn')
-
-
-json = (':U',
-        list,
-        str,
-        dict,
-        int,
-        float,
-        tuple,
-        bool,
-        type(None))
 
 
 def is_valid(schema, value):
@@ -438,6 +425,9 @@ def _gen_check(decoratee, name, schemas):
     return decorated
 
 
+# TODO schema.check doesnt support switching between arg and kwarg at call time.
+# u have to use which ever way you defined the annotation. ie default value?
+# or actually is this a feature? helpful constraint?
 @util.func.optionally_parameterized_decorator
 def check(*args, **kwargs):
     # TODO add doctest with :fn and args/kwargs
