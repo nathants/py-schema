@@ -6,11 +6,11 @@ import tornado.ioloop
 import tornado.gen
 
 
-def test_dict_behavior():
+def test_dict_behavior_key_ordering():
     shape = {int: float}
-    assert schema.validate(shape, {1:   1.1})           == {1: 1.1}
-    assert schema.validate(shape, {1.1: 1,   1:   1.1}) == {1: 1.1}
-    assert schema.validate(shape, {1:   1.1, 1.1: 1})   == {1: 1.1}
+    assert schema.validate(shape, {1: 1.1}) == {1: 1.1}
+    assert schema.validate(shape, {1.1: 1, 1: 1.1}) == {1: 1.1}
+    assert schema.validate(shape, {1: 1.1, 1.1: 1}) == {1: 1.1}
 
 
 def test_none_as_schema():

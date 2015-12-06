@@ -1,7 +1,6 @@
 # TODO schema.check doesnt support switching between arg and kwarg at call time.
 # u have to use which ever way you defined the annotation. ie default value?
 # or actually is this a feature? helpful constraint?
-
 import functools
 import inspect
 import pprint
@@ -341,16 +340,14 @@ def _read_annotations(fn, arg_schemas, kwarg_schemas):
            if x.default is not inspect._empty
            or x.kind is x.KEYWORD_ONLY
            and x.annotation is not inspect._empty}
-    val = util.dicts.merge(val,
-                        {'args': x.annotation
-                         for x in sig.parameters.values()
-                         if x.annotation is not inspect._empty
-                         and x.kind is x.VAR_POSITIONAL})
-    val = util.dicts.merge(val,
-                        {'kwargs': x.annotation
-                         for x in sig.parameters.values()
-                         if x.annotation is not inspect._empty
-                         and x.kind is x.VAR_KEYWORD})
+    val = util.dicts.merge(val, {'args': x.annotation
+                                 for x in sig.parameters.values()
+                                 if x.annotation is not inspect._empty
+                                 and x.kind is x.VAR_POSITIONAL})
+    val = util.dicts.merge(val, {'kwargs': x.annotation
+                                 for x in sig.parameters.values()
+                                 if x.annotation is not inspect._empty
+                                 and x.kind is x.VAR_KEYWORD})
     kwarg_schemas = util.dicts.merge(kwarg_schemas, val)
     if sig.return_annotation is not inspect._empty:
         return_schema = sig.return_annotation
@@ -433,8 +430,7 @@ def _gen_check(decoratee, name, schemas):
                     to_yield = validate(schemas['yields'], to_yield)
             except StopIteration as e:
                 with util.exceptions.update('schema.check failed for return value of generator:\n {}'.format(name), AssertionError):
-                    e.value = validate(schemas['returns'], getattr(e, 'value', None))
-                raise
+                    return validate(schemas['returns'], getattr(e, 'value', None))
             try:
                 to_send = yield to_yield
             except:
