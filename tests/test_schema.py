@@ -6,6 +6,13 @@ import tornado.ioloop
 import tornado.gen
 
 
+def test_dict_behavior():
+    shape = {int: float}
+    assert schema.validate(shape, {1:   1.1})           == {1: 1.1}
+    assert schema.validate(shape, {1.1: 1,   1:   1.1}) == {1: 1.1}
+    assert schema.validate(shape, {1:   1.1, 1.1: 1})   == {1: 1.1}
+
+
 def test_none_as_schema():
     shape = {str: None}
     assert schema.validate(shape, {'a': None}) == {'a': None}
@@ -20,11 +27,13 @@ def test_new_schema_old_data():
     shape = {'a': int, 'b': (':O', int, 2)}
     assert schema.validate(shape, {'a': 1}) == {'a': 1, 'b': 2}
 
+
 def test_old_schema_new_data():
     shape = {'a': int}
     assert schema.validate(shape, {'a': 1, 'b': 2}) == {'a': 1}
     with pytest.raises(AssertionError):
         schema.validate(shape, {'a': 1, 'b': 2}, exact_match=True)
+
 
 def test_exact_match():
     shape = {'a': 1}
@@ -73,12 +82,24 @@ def test_union():
         schema.validate(shape, True)
 
 
-def test_maybe_are_applied_in_order():
+def test_union_empty():
+    shape = (':U',)
+    with pytest.raises(AssertionError):
+        schema.validate(shape, True)
+
+
+def test_union_are_applied_in_order():
     shape = (':U', {'name': (':O', str, 'bob')},
                    {'name': str, 'num': (':O', int, 0)})
     assert schema.validate(shape, {}) == {'name': 'bob', 'num': 0}
     with pytest.raises(Exception):
         schema.validate(shape, {'name': 123})
+
+
+def test_intersection_empty():
+    shape = (':I',)
+    with pytest.raises(AssertionError):
+        schema.validate(shape, True)
 
 
 def test_intersection_are_applied_in_order():
@@ -213,6 +234,9 @@ def test_sets_are_illegal():
 
 def test_empty_dicts():
     assert schema.validate({}, {}) == {}
+
+
+def test_type_keys_are_optional():
     assert schema.validate({str: str}, {}) == {}
 
 
@@ -398,21 +422,6 @@ def test_object_type_exact_match():
         schema.validate(shape, {1: 'apple'}, True)
 
 
-def test_type_to_lambda():
-    shape = {str: lambda x: x == 'apple'}
-    schema.validate(shape, {'a': 'apple'})
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'notapple'})
-
-
-def test_required_type_to_type():
-    shape = {'a': 'apple',
-             str: float}
-    schema.validate(shape, {'a': 'apple', '1': 1.1})
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple'})
-
-
 def test_required_value_to_type():
     shape = {'a': 'apple',
              'b': str}
@@ -431,18 +440,6 @@ def test_required_value_to_value():
         schema.validate(shape, {'a': 'apple'})
 
 
-def test_required_type_to_value():
-    shape = {'a': 'apple',
-             str: 'banana'}
-    schema.validate(shape, {'a': 'apple', 'b': 'banana'})
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple'})
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple', 1: 'banana'})
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple', 'b': 'notbanana'})
-
-
 def test_type_to_value():
     shape = {str: 'apple'}
     schema.validate(shape, {'a': 'apple'})
@@ -457,7 +454,7 @@ def test_nested_optional():
     assert schema.validate(shape, [{}]) == [{'name': 'bob'}]
 
 
-def test_optional_value_key_with_validation():
+def test_optional():
     shape = {'a': 'apple',
              'b': [':O', str, 'banana']}
     schema.validate(shape, {'a': 'apple'}) == {'a': 'apple', 'b': 'banana'}
@@ -508,9 +505,19 @@ def test_nested_type_to_type():
         schema.validate(shape, {'1': {'1': '1'}})
 
 
+def test_val_to_val_and_type_to_type():
+    shape = {'a': 'apple',
+             str: float}
+    assert schema.validate(shape, {'a': 'apple', '1': 1.1}) == {'a': 'apple', '1': 1.1}
+    assert schema.validate(shape, {'a': 'apple'}) == {'a': 'apple'}
+    with pytest.raises(AssertionError):
+        schema.validate(shape, {'a': 'applebees'})
+
+
 def test_type_to_type():
     shape = {str: int}
-    schema.validate(shape, {'1': 1})
+    assert schema.validate(shape, {'1': 1}) == {'1': 1}
+    assert schema.validate(shape, {}) == {}
     with pytest.raises(AssertionError):
         schema.validate(shape, {'1': '1'})
 
@@ -529,14 +536,14 @@ def test_value_to_value():
         schema.validate(shape, {'foo': 1})
 
 
-def test_value_to_validator():
+def test_fn_schema():
     shape = {'foo': lambda x: isinstance(x, int) and x > 0}
     schema.validate(shape, {'foo': 1})
     with pytest.raises(AssertionError):
         schema.validate(shape, {'foo': 0})
 
 
-def test_nested_value_to_validator():
+def test_nested_fn_schema():
     shape = {'foo': {'bar': lambda x: isinstance(x, int) and x > 0}}
     schema.validate(shape, {'foo': {'bar': 1}})
     with pytest.raises(AssertionError):
