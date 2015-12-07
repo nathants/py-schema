@@ -214,7 +214,7 @@ def _validate(schema, value, exact_match=False):
                     assert _kwargs == kwargs, 'kwargs {_kwargs} did not match {kwargs}'.format(**locals())
                     return value
             elif isinstance(schema, list):
-                assert len(schema) == 1, 'list schemas represent variable length iterables and must contain a single schema: {}'.format(schema)
+                assert len(schema) == 1, 'list schemas represent homogenous seqs and must contain a single schema: {}'.format(schema)
                 return [_validate(schema[0], v) for v in value]
             elif isinstance(schema, tuple):
                 assert len(schema) == len(value), '{} <{}> mismatched length of schema: {} <{}>'.format(value, type(value), schema, type(schema))

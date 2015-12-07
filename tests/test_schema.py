@@ -5,6 +5,11 @@ import tornado.concurrent
 import tornado.ioloop
 import tornado.gen
 
+# TODO queues
+
+# python specific tests
+
+# common tests between python and clojure
 
 def test_dict_behavior_key_ordering():
     shape = {int: float}
@@ -38,21 +43,21 @@ def test_old_schema_new_data():
 def test_exact_match():
     shape = {'a': 1}
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 1, 'b': 2}, True)
+        schema.validate(shape, {'a': 1, 'b': 2}, exact_match=True)
 
 
 def test_missing_keys_in_value_are_never_allowed():
     shape = {'a': int, 'b': int}
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 1}, True)
+        schema.validate(shape, {'a': 1}, exact_match=True)
     with pytest.raises(AssertionError):
         schema.validate(shape, {'a': 1})
 
 
-def test_future_when_the_schema_is_a_future_type():
-    shape = tornado.concurrent.Future
-    f = shape()
-    assert schema.validate(shape, f) is f
+def test_type_schemas_pass_value_through():
+    shape = object
+    x = object()
+    assert schema.validate(shape, x) is x
 
 
 def test_future():
