@@ -163,16 +163,17 @@ def test_args():
 
 # common tests between python and clojure
 
+
+def test_none_as_schema():
+    schema = {str: None}
+    assert validate(schema, {'a': None}) == {'a': None}
+
+
 def test_dict_behavior_key_ordering():
     schema = {int: float}
     assert validate(schema, {1: 1.1}) == {1: 1.1}
     assert validate(schema, {1.1: 1, 1: 1.1}) == {1: 1.1}
     assert validate(schema, {1: 1.1, 1.1: 1}) == {1: 1.1}
-
-
-def test_none_as_schema():
-    schema = {str: None}
-    assert validate(schema, {'a': None}) == {'a': None}
 
 
 def test_false_as_schema():
