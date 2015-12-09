@@ -180,6 +180,7 @@ def _validate(schema, value, exact_match=False):
             assert isinstance(value, (list, tuple)) or _starts_with_keyword(schema), '{} <{}> is not a seq: {} <{}>'.format(value, type(value), schema, type(schema))
             if schema and schema[0] in _schema_commands:
                 if schema[0] == ':O':
+                    assert len(schema) == 3, ':O schema should be [:O, schema, default-value], not: {}'.format(schema)
                     return _validate(schema[1], value)
                 elif schema[0] == ':U':
                     assert schema[1:], 'union types cannot be empty: {}'.format(schema)

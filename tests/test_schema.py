@@ -1,326 +1,19 @@
 import pytest
 import util.dicts
-import schema
 import tornado.concurrent
 import tornado.ioloop
 import tornado.gen
+from schema import validate, check
+
 
 # TODO queues
 
 # python specific tests
 
-# common tests between python and clojure
-
-def test_dict_behavior_key_ordering():
-    shape = {int: float}
-    assert schema.validate(shape, {1: 1.1}) == {1: 1.1}
-    assert schema.validate(shape, {1.1: 1, 1: 1.1}) == {1: 1.1}
-    assert schema.validate(shape, {1: 1.1, 1.1: 1}) == {1: 1.1}
-
-
-def test_none_as_schema():
-    shape = {str: None}
-    assert schema.validate(shape, {'a': None}) == {'a': None}
-
-
-def test_false_as_schema():
-    shape = {str: False}
-    assert schema.validate(shape, {'a': False}) == {'a': False}
-
-
-def test_new_schema_old_data():
-    shape = {'a': int, 'b': (':O', int, 2)}
-    assert schema.validate(shape, {'a': 1}) == {'a': 1, 'b': 2}
-
-
-def test_old_schema_new_data():
-    shape = {'a': int}
-    assert schema.validate(shape, {'a': 1, 'b': 2}) == {'a': 1}
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 1, 'b': 2}, exact_match=True)
-
-
-def test_exact_match():
-    shape = {'a': 1}
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 1, 'b': 2}, exact_match=True)
-
-
-def test_missing_keys_in_value_are_never_allowed():
-    shape = {'a': int, 'b': int}
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 1}, exact_match=True)
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 1})
-
-
-def test_type_schemas_pass_value_through():
-    shape = object
-    x = object()
-    assert schema.validate(shape, x) is x
-
-
-def test_future():
-    shape = str
-    f1 = tornado.concurrent.Future()
-    f2 = schema.validate(shape, f1)
-    assert f1 is not f2
-    f1.set_result('asdf')
-    assert f2.result() == 'asdf'
-
-
-def test_future_fail():
-    shape = str
-    f1 = tornado.concurrent.Future()
-    f2 = schema.validate(shape, f1)
-    assert f1 is not f2
-    f1.set_result(1)
-    with pytest.raises(AssertionError):
-        f2.result()
-
-
-def test_union():
-    shape = (':U', str, None)
-    assert schema.validate(shape, 'foo') == 'foo'
-    assert schema.validate(shape, None) is None
-    with pytest.raises(AssertionError):
-        schema.validate(shape, True)
-
-
-def test_union_empty():
-    shape = (':U',)
-    with pytest.raises(AssertionError):
-        schema.validate(shape, True)
-
-
-def test_union_are_applied_in_order():
-    shape = (':U', {'name': (':O', str, 'bob')},
-                   {'name': str, 'num': (':O', int, 0)})
-    assert schema.validate(shape, {}) == {'name': 'bob', 'num': 0}
-    with pytest.raises(Exception):
-        schema.validate(shape, {'name': 123})
-
-
-def test_intersection_empty():
-    shape = (':I',)
-    with pytest.raises(AssertionError):
-        schema.validate(shape, True)
-
-
-def test_intersection_are_applied_in_order():
-    shape = (':I', {'name': (':O', str, 'bob')},
-                   {'name': str, 'num': (':O', int, 0)})
-    assert schema.validate(shape, {}) == {'name': 'bob', 'num': 0}
-    with pytest.raises(Exception):
-        schema.validate(shape, {'name': 123})
-
-
-def test_union_passes_with_either():
-    shape = (':U', {'name': str},
-                   {'name': int})
-    assert schema.validate(shape, {'name': 'bob'}) == {'name': 'bob'}
-    assert schema.validate(shape, {'name': 123}) == {'name': 123}
-
-
-def test_intersection_passes_with_both():
-    shape = (':I', {'name': str},
-                   {'name': (':U', 'bob', 'jane')})
-    assert schema.validate(shape, {'name': 'jane'})
-    with pytest.raises(Exception):
-        schema.validate(shape, {'name': 123})
-    with pytest.raises(Exception):
-        schema.validate(shape, {'name': 'other'})
-
-
-def test_method():
-    class Foo(object):
-        @schema.check
-        def bar(self, x: int) -> str:
-            if x == 0:
-                return 0
-            else:
-                return str(x)
-    assert Foo().bar(1) == '1'
-    with pytest.raises(Exception):
-        Foo().bar('1')
-    with pytest.raises(Exception):
-        Foo().bar(0)
-
-
-def test_generator_method():
-    class Foo(object):
-        @schema.check(yields=str)
-        def bar(self, x: int):
-            if x == 0:
-                yield 0
-            else:
-                yield str(x)
-    assert next(Foo().bar(1)) == '1'
-    with pytest.raises(Exception):
-        next(Foo().bar('1'))
-    with pytest.raises(Exception):
-        next(Foo().bar(0))
-
-
-def test_kwargs():
-    @schema.check
-    def fn(**kw: {str: int}):
-        assert 'a' in kw and 'b' in kw
-        return True
-    fn(a=1, b=2)
-    with pytest.raises(AssertionError):
-        fn(a=1, b=2.0)
-
-
-def test_args():
-    @schema.check
-    def fn(*a: [int]):
-        return True
-    fn(1, 2)
-    with pytest.raises(AssertionError):
-        fn(1, 2.0)
-
-
-def test_callable():
-    shape = {str: callable}
-    val = {'fn': lambda: None}
-    assert schema.validate(shape, val)['fn'] is val['fn']
-    with pytest.raises(Exception):
-        schema.validate(shape, {'not-fn': None})
-
-
-def test_fn_types():
-    shape = (':fn', (int, int), {'returns': str})
-
-    @schema.check
-    def fn(x: int, y: int) -> str:
-        pass
-    assert schema.validate(shape, fn) is fn
-
-    @schema.check
-    def fn(x: int, y: float) -> str:
-        pass
-    with pytest.raises(AssertionError):
-        schema.validate(shape, fn) # pos arg 2 invalid
-
-    @schema.check
-    def fn(x: int, y: int) -> float:
-        pass
-    with pytest.raises(AssertionError):
-        schema.validate(shape, fn) # return invalid
-
-    @schema.check
-    def fn(x: int, y: int):
-        pass
-    with pytest.raises(AssertionError):
-        schema.validate(shape, fn) # missing return shape
-
-
-def test_union_types():
-    shape = (':U', int, float)
-    assert schema.validate(shape, 1) == 1
-    assert schema.validate(shape, 1.0) == 1.0
-    with pytest.raises(AssertionError):
-        schema.validate((':U', int, float), '1')
-
-    shape = (':U', [int], {str: int})
-    assert schema.validate(shape, [1]) == [1]
-    assert schema.validate(shape, {'1': 2}) == {'1': 2}
-    with pytest.raises(AssertionError):
-        schema.validate(shape, [1.0])
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': 2.0})
-
-
-def test_sets_are_illegal():
-    with pytest.raises(AssertionError):
-        schema.validate({1, 2}, set())
-
-
-def test_empty_dicts():
-    assert schema.validate({}, {}) == {}
-
-
-def test_type_keys_are_optional():
-    assert schema.validate({str: str}, {}) == {}
-
-
-def test_empty_dicts_exact_match():
-    with pytest.raises(AssertionError):
-        assert schema.validate({}, {'1': 2}, True)
-
-
-def test_empty_seqs():
-    assert schema.validate(list, []) == []
-    assert schema.validate(tuple, ()) == ()
-    assert schema.validate([str], []) == []
-    with pytest.raises(AssertionError):
-        schema.validate([], [123])
-    with pytest.raises(AssertionError):
-        schema.validate([], (123,))
-
-
-def test_validate_returns_value():
-    assert schema.validate(int, 123) == 123
-
-
-def test_unicde_synonymous_with_str():
-    assert schema.validate(str, u'asdf') == 'asdf'
-    assert schema.validate(u'asdf', 'asdf') == 'asdf'
-    assert schema.validate('asdf', u'asdf') == 'asdf'
-    assert schema.validate(dict, {u'a': 'b'}) == {'a': 'b'}
-
-
-def test_bytes_not_synonymous_with_str():
-    assert schema.validate(bytes, b'123') == b'123'
-    with pytest.raises(AssertionError):
-        schema.validate(str, b'123')
-
-
-def test_bytes_matches_str_schemas():
-    shape = 'asdf'
-    schema.validate(shape, b'asdf')
-
-
-def test_partial_comparisons_for_testing():
-    shape = {'blah': str,
-             'data': [{str: str}]}
-    data = {'blah': 'foobar',
-            'data': [{'a': 'b'},
-                     {'c': 'd'},
-                     # ...
-                     # pretend 'data' is something too large to specify as a value literal in a test
-                     ]}
-    schema.validate(shape, data)
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'blah': 'foobar',
-                                'data': [{'a': 1}]})
-
-
-def test_object_dict():
-    shape = {object: int}
-    schema.validate(shape, {'1': 2})
-    with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': 2.0})
-
-
-def test_object_tuple():
-    shape = (object, object)
-    schema.validate(shape, (1, '2'))
-    with pytest.raises(AssertionError):
-        schema.validate(shape, (1, 2, 3))
-
-
-def test_object_list():
-    shape = [object]
-    schema.validate(shape, [1, 2, 3])
-    schema.validate(shape, [1, '2', 3.0])
-
-
 def test_annotations_return():
     def fn() -> str:
         return 123
-    fn = schema.check()(fn)
+    fn = check()(fn)
     with pytest.raises(AssertionError):
         fn()
 
@@ -328,7 +21,7 @@ def test_annotations_return():
 def test_annotation_args():
     def fn(x: int) -> str:
         return str(x)
-    fn = schema.check()(fn)
+    fn = check()(fn)
     assert fn(1) == '1'
     with pytest.raises(AssertionError):
         fn(1.0)
@@ -337,14 +30,14 @@ def test_annotation_args():
 def test_annotation_kwargs():
     def fn(x: int = 0) -> str:
         return str(x)
-    fn = schema.check()(fn)
+    fn = check()(fn)
     assert fn(x=1) == '1'
     with pytest.raises(AssertionError):
         fn(x=1.0)
 
 
 def test_check_args_and_kwargs():
-    @schema.check
+    @check
     def fn(a: int, b: float = 0) -> str:
         return str(a + b)
     assert fn(1) == '1'
@@ -360,7 +53,7 @@ def test_check_args_and_kwargs():
 
 
 def test_check_returns():
-    @schema.check
+    @check
     def badfn() -> str:
         return 0
     with pytest.raises(AssertionError):
@@ -368,7 +61,7 @@ def test_check_returns():
 
 
 def test_check_generators():
-    @schema.check
+    @check
     def main(x: int):
         yield
     next(main(1))
@@ -378,7 +71,7 @@ def test_check_generators():
 
 def test_check_coroutines():
     @tornado.gen.coroutine
-    @schema.check
+    @check
     def main(x: int) -> float:
         yield tornado.gen.moment
         if x > 0:
@@ -392,7 +85,7 @@ def test_check_coroutines():
 
 
 def test_check_yields_and_sends():
-    @schema.check(sends=int, yields=str)
+    @check(sends=int, yields=str)
     def main():
         val = yield 'a'
         if val > 0:
@@ -415,203 +108,488 @@ def test_check_yields_and_sends():
         gen.send('1') # violate _send
 
 
+def test_sets_are_illegal():
+    with pytest.raises(AssertionError):
+        validate({1, 2}, set())
+
+
+def test_method():
+    class Foo(object):
+        @check
+        def bar(self, x: int) -> str:
+            if x == 0:
+                return 0
+            else:
+                return str(x)
+    assert Foo().bar(1) == '1'
+    with pytest.raises(AssertionError):
+        Foo().bar('1')
+    with pytest.raises(AssertionError):
+        Foo().bar(0)
+
+
+def test_generator_method():
+    class Foo(object):
+        @check(yields=str)
+        def bar(self, x: int):
+            if x == 0:
+                yield 0
+            else:
+                yield str(x)
+    assert next(Foo().bar(1)) == '1'
+    with pytest.raises(AssertionError):
+        next(Foo().bar('1'))
+    with pytest.raises(AssertionError):
+        next(Foo().bar(0))
+
+
+def test_kwargs():
+    @check
+    def fn(**kw: {str: int}):
+        assert 'a' in kw and 'b' in kw
+        return True
+    fn(a=1, b=2)
+    with pytest.raises(AssertionError):
+        fn(a=1, b=2.0)
+
+
+def test_args():
+    @check
+    def fn(*a: [int]):
+        return True
+    fn(1, 2)
+    with pytest.raises(AssertionError):
+        fn(1, 2.0)
+
+# common tests between python and clojure
+
+def test_dict_behavior_key_ordering():
+    schema = {int: float}
+    assert validate(schema, {1: 1.1}) == {1: 1.1}
+    assert validate(schema, {1.1: 1, 1: 1.1}) == {1: 1.1}
+    assert validate(schema, {1: 1.1, 1.1: 1}) == {1: 1.1}
+
+
+def test_none_as_schema():
+    schema = {str: None}
+    assert validate(schema, {'a': None}) == {'a': None}
+
+
+def test_false_as_schema():
+    schema = {str: False}
+    assert validate(schema, {'a': False}) == {'a': False}
+
+
+def test_new_schema_old_data():
+    schema = {'a': int, 'b': (':O', int, 2)}
+    assert validate(schema, {'a': 1}) == {'a': 1, 'b': 2}
+
+
+def test_old_schema_new_data():
+    schema = {'a': int}
+    assert validate(schema, {'a': 1, 'b': 2}) == {'a': 1}
+    with pytest.raises(AssertionError):
+        validate(schema, {'a': 1, 'b': 2}, exact_match=True)
+
+
+def test_exact_match():
+    schema = {'a': 1}
+    with pytest.raises(AssertionError):
+        validate(schema, {'a': 1, 'b': 2}, exact_match=True)
+
+
+def test_missing_keys_in_value_are_never_allowed():
+    schema = {'a': int, 'b': int}
+    with pytest.raises(AssertionError):
+        validate(schema, {'a': 1}, exact_match=True)
+    with pytest.raises(AssertionError):
+        validate(schema, {'a': 1})
+
+
+def test_type_schemas_pass_value_through():
+    schema = object
+    x = object()
+    assert validate(schema, x) is x
+
+
+def test_future():
+    schema = str
+    f1 = tornado.concurrent.Future()
+    f2 = validate(schema, f1)
+    assert f1 is not f2
+    f1.set_result('asdf')
+    assert f2.result() == 'asdf'
+
+
+def test_future_fail():
+    schema = str
+    f1 = tornado.concurrent.Future()
+    f2 = validate(schema, f1)
+    assert f1 is not f2
+    f1.set_result(1)
+    with pytest.raises(AssertionError):
+        f2.result()
+
+
+def test_union():
+    schema = (':U', str, None)
+    assert validate(schema, 'foo') == 'foo'
+    assert validate(schema, None) is None
+    with pytest.raises(AssertionError):
+        validate(schema, True)
+
+
+def test_union_empty():
+    schema = (':U',)
+    with pytest.raises(AssertionError):
+        validate(schema, True)
+
+
+def test_intersection():
+    schema = (':I', str, lambda x: len(x) > 2)
+    assert validate(schema, 'foo') == 'foo'
+    with pytest.raises(AssertionError):
+        assert validate(schema, [])
+    with pytest.raises(AssertionError):
+        assert validate(schema, "")
+
+def test_intersection_empty():
+    schema = (':I',)
+    with pytest.raises(AssertionError):
+        validate(schema, True)
+
+
+def test_union_applied_in_order():
+    schema = (':U', {'name': (':O', str, 'bob')},
+                    {'name': int})
+    assert validate(schema, {}) == {'name': 'bob'}
+    assert validate(schema, {'name': 123}) == {'name': 123}
+    with pytest.raises(AssertionError):
+        validate(schema, {'name': 1.0})
+
+
+def test_intersection_applied_in_order():
+    schema = (':I', {'name': (':O', object, 'bob')},
+                    {'name': int})
+    assert validate(schema, {'name': 123}) == {'name': 123}
+    with pytest.raises(AssertionError):
+        validate(schema, {})
+    with pytest.raises(AssertionError):
+        validate(schema, {'name': 'not-an-int'})
+
+
+def test_callable():
+    schema = {str: callable}
+    val = {'fn': lambda: None}
+    assert validate(schema, val)['fn'] is val['fn']
+    with pytest.raises(AssertionError):
+        validate(schema, {'not-fn': None})
+
+
+def test_fn_types():
+    schema = (':fn', (int, int), {'returns': str})
+
+    @check
+    def fn(x: int, y: int) -> str:
+        pass
+    assert validate(schema, fn) is fn
+
+    @check
+    def fn(x: int, y: float) -> str:
+        pass
+    with pytest.raises(AssertionError):
+        validate(schema, fn) # pos arg 2 invalid
+
+    @check
+    def fn(x: int, y: int) -> float:
+        pass
+    with pytest.raises(AssertionError):
+        validate(schema, fn) # return invalid
+
+    @check
+    def fn(x: int, y: int):
+        pass
+    with pytest.raises(AssertionError):
+        validate(schema, fn) # missing return schema
+
+
+def test_empty_dicts():
+    assert validate({}, {}) == {}
+
+
+def test_type_keys_are_optional():
+    assert validate({str: str}, {}) == {}
+
+
+def test_empty_dicts_exact_match():
+    with pytest.raises(AssertionError):
+        assert validate({}, {'1': 2}, True)
+
+
+def test_empty_seqs():
+    assert validate(list, []) == []
+    assert validate(tuple, ()) == ()
+    assert validate([str], []) == []
+    with pytest.raises(AssertionError):
+        validate([], [123])
+    with pytest.raises(AssertionError):
+        validate([], (123,))
+
+
+def test_validate_returns_value():
+    assert validate(int, 123) == 123
+
+
+def test_unicde_synonymous_with_str():
+    assert validate(str, u'asdf') == 'asdf'
+    assert validate(u'asdf', 'asdf') == 'asdf'
+    assert validate('asdf', u'asdf') == 'asdf'
+    assert validate(dict, {u'a': 'b'}) == {'a': 'b'}
+
+
+def test_bytes_not_synonymous_with_str():
+    assert validate(bytes, b'123') == b'123'
+    with pytest.raises(AssertionError):
+        validate(str, b'123')
+
+
+def test_bytes_matches_str_schemas():
+    schema = 'asdf'
+    validate(schema, b'asdf')
+
+
+def test_partial_comparisons_for_testing():
+    schema = {'blah': str,
+              'data': [{str: str}]}
+    data = {'blah': 'foobar',
+            'data': [{'a': 'b'},
+                     {'c': 'd'},
+                     # ...
+                     # pretend 'data' is something too large to specify as a value literal in a test
+                     ]}
+    validate(schema, data)
+    with pytest.raises(AssertionError):
+        validate(schema, {'blah': 'foobar',
+                          'data': [{'a': 1}]})
+
+
+def test_object_dict():
+    schema = {object: int}
+    validate(schema, {'1': 2})
+    with pytest.raises(AssertionError):
+        validate(schema, {'1': 2.0})
+
+
+def test_object_tuple():
+    schema = (object, object)
+    validate(schema, (1, '2'))
+    with pytest.raises(AssertionError):
+        validate(schema, (1, 2, 3))
+
+
+def test_object_list():
+    schema = [object]
+    validate(schema, [1, 2, 3])
+    validate(schema, [1, '2', 3.0])
+
+
 def test_object_type():
-    shape = {str: object}
-    schema.validate(shape, {'a': 'apple'})
-    schema.validate(shape, {'b': 123})
+    schema = {str: object}
+    validate(schema, {'a': 'apple'})
+    validate(schema, {'b': 123})
 
 
 def test_object_type_exact_match():
-    shape = {str: object}
+    schema = {str: object}
     with pytest.raises(AssertionError):
-        schema.validate(shape, {1: 'apple'}, True)
+        validate(schema, {1: 'apple'}, True)
 
 
 def test_required_value_to_type():
-    shape = {'a': 'apple',
-             'b': str}
-    schema.validate(shape, {'a': 'apple', 'b': 'banana'})
+    schema = {'a': 'apple',
+              'b': str}
+    validate(schema, {'a': 'apple', 'b': 'banana'})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple'})
+        validate(schema, {'a': 'apple'})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple', 'b': 1})
+        validate(schema, {'a': 'apple', 'b': 1})
 
 
 def test_required_value_to_value():
-    shape = {'a': 'apple',
-             'b': 'banana'}
-    schema.validate(shape, {'a': 'apple', 'b': 'banana'})
+    schema = {'a': 'apple',
+              'b': 'banana'}
+    validate(schema, {'a': 'apple', 'b': 'banana'})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple'})
+        validate(schema, {'a': 'apple'})
 
 
 def test_type_to_value():
-    shape = {str: 'apple'}
-    schema.validate(shape, {'a': 'apple'})
+    schema = {str: 'apple'}
+    validate(schema, {'a': 'apple'})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'notapple'})
+        validate(schema, {'a': 'notapple'})
 
 
 def test_nested_optional():
-    shape = {'a': {'b': (':O', object, 'default-val')}}
-    assert schema.validate(shape, {'a': {}}) == {'a': {'b': 'default-val'}}
-    shape = [{'name': (':O', object, 'bob')}]
-    assert schema.validate(shape, [{}]) == [{'name': 'bob'}]
+    schema = {'a': {'b': (':O', object, 'default-val')}}
+    assert validate(schema, {'a': {}}) == {'a': {'b': 'default-val'}}
+    schema = [{'name': (':O', object, 'bob')}]
+    assert validate(schema, [{}]) == [{'name': 'bob'}]
 
 
 def test_optional():
-    shape = {'a': 'apple',
-             'b': [':O', str, 'banana']}
-    schema.validate(shape, {'a': 'apple'}) == {'a': 'apple', 'b': 'banana'}
-    schema.validate(shape, {'a': 'apple', 'b': 'banana'}) == {'a': 'apple', 'b': 'banana'}
+    schema = {'a': 'apple',
+              'b': [':O', str, 'banana']}
+    validate(schema, {'a': 'apple'}) == {'a': 'apple', 'b': 'banana'}
+    validate(schema, {'a': 'apple', 'b': 'banana'}) == {'a': 'apple', 'b': 'banana'}
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'apple', 'b': 1.0})
+        validate(schema, {'a': 'apple', 'b': 1.0})
 
 
 def test_value_schema():
-    shape = 1
-    schema.validate(shape, 1)
+    schema = 1
+    validate(schema, 1)
     with pytest.raises(AssertionError):
-        schema.validate(shape, 2)
+        validate(schema, 2)
 
 
 def test_single_type_schema():
-    shape = int
-    schema.validate(shape, 1)
+    schema = int
+    validate(schema, 1)
     with pytest.raises(AssertionError):
-        schema.validate(shape, '1')
+        validate(schema, '1')
 
 
 def test_single_iterable_length_n():
-    shape = [int]
-    schema.validate(shape, [1, 2])
+    schema = [int]
+    validate(schema, [1, 2])
     with pytest.raises(AssertionError):
-        schema.validate(shape, [1, '2'])
+        validate(schema, [1, '2'])
 
 
 def test_single_iterable_fixed_length():
-    shape = (float, int)
-    schema.validate(shape, [1.1, 2])
+    schema = (float, int)
+    validate(schema, [1.1, 2])
     with pytest.raises(AssertionError):
-        schema.validate(shape, [1.1, '2'])
+        validate(schema, [1.1, '2'])
 
 
 def test_nested_type_to_type_mismatch():
-    shape = {str: {str: int}}
-    schema.validate(shape, {'1': {'1': 1}})
+    schema = {str: {str: int}}
+    validate(schema, {'1': {'1': 1}})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': None})
+        validate(schema, {'1': None})
 
 
 def test_nested_type_to_type():
-    shape = {str: {str: int}}
-    schema.validate(shape, {'1': {'1': 1}})
+    schema = {str: {str: int}}
+    validate(schema, {'1': {'1': 1}})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': {'1': '1'}})
+        validate(schema, {'1': {'1': '1'}})
 
 
 def test_val_to_val_and_type_to_type():
-    shape = {'a': 'apple',
-             str: float}
-    assert schema.validate(shape, {'a': 'apple', '1': 1.1}) == {'a': 'apple', '1': 1.1}
-    assert schema.validate(shape, {'a': 'apple'}) == {'a': 'apple'}
+    schema = {'a': 'apple',
+              str: float}
+    assert validate(schema, {'a': 'apple', '1': 1.1}) == {'a': 'apple', '1': 1.1}
+    assert validate(schema, {'a': 'apple'}) == {'a': 'apple'}
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'a': 'applebees'})
+        validate(schema, {'a': 'applebees'})
 
 
 def test_type_to_type():
-    shape = {str: int}
-    assert schema.validate(shape, {'1': 1}) == {'1': 1}
-    assert schema.validate(shape, {}) == {}
+    schema = {str: int}
+    assert validate(schema, {'1': 1}) == {'1': 1}
+    assert validate(schema, {}) == {}
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': '1'})
+        validate(schema, {'1': '1'})
 
 
 def test_value_to_type():
-    shape = {'foo': int}
-    schema.validate(shape, {'foo': 1})
+    schema = {'foo': int}
+    validate(schema, {'foo': 1})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'foo': 'bar'})
+        validate(schema, {'foo': 'bar'})
 
 
 def test_value_to_value():
-    shape = {'foo': 'bar'}
-    schema.validate(shape, {'foo': 'bar'})
+    schema = {'foo': 'bar'}
+    validate(schema, {'foo': 'bar'})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'foo': 1})
+        validate(schema, {'foo': 1})
 
 
 def test_fn_schema():
-    shape = {'foo': lambda x: isinstance(x, int) and x > 0}
-    schema.validate(shape, {'foo': 1})
+    schema = {'foo': lambda x: isinstance(x, int) and x > 0}
+    validate(schema, {'foo': 1})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'foo': 0})
+        validate(schema, {'foo': 0})
 
 
 def test_nested_fn_schema():
-    shape = {'foo': {'bar': lambda x: isinstance(x, int) and x > 0}}
-    schema.validate(shape, {'foo': {'bar': 1}})
+    schema = {'foo': {'bar': lambda x: isinstance(x, int) and x > 0}}
+    validate(schema, {'foo': {'bar': 1}})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'foo': {'bar': 0}})
+        validate(schema, {'foo': {'bar': 0}})
 
 
 def test_iterable_length_n_bad_validator():
-    shape = {str: [str, str]}
+    schema = {str: [str, str]}
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'blah': ['blah', 'blah']})
+        validate(schema, {'blah': ['blah', 'blah']})
 
 
 def test_iterable_length_n():
-    shape = {str: [str]}
-    schema.validate(shape, {'1': ['1', '2']})
+    schema = {str: [str]}
+    validate(schema, {'1': ['1', '2']})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': 1})
+        validate(schema, {'1': 1})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': ['1', 2]})
+        validate(schema, {'1': ['1', 2]})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': None})
+        validate(schema, {'1': None})
 
 
 def test_iterable_fixed_length():
-    shape = {str: (str, str)}
-    schema.validate(shape, {'1': ['1', '2']})
+    schema = {str: (str, str)}
+    validate(schema, {'1': ['1', '2']})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': ['1']})
+        validate(schema, {'1': ['1']})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': ['1', '2', '3']})
+        validate(schema, {'1': ['1', '2', '3']})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': ['1', 2]})
+        validate(schema, {'1': ['1', 2]})
 
 
 def test_nested_iterables():
-    shape = {str: [[str]]}
-    schema.validate(shape, {'1': [['1'], ['2']]})
+    schema = {str: [[str]]}
+    validate(schema, {'1': [['1'], ['2']]})
     with pytest.raises(AssertionError):
-        assert schema.validate(shape, {'1': [['1'], [1]]})
+        assert validate(schema, {'1': [['1'], [1]]})
 
 
 def test_many_keys():
-    shape = {str: int}
-    schema.validate(shape, {'1': 2, '3': 4})
+    schema = {str: int}
+    validate(schema, {'1': 2, '3': 4})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': 2, '3': 4.0})
+        validate(schema, {'1': 2, '3': 4.0})
 
 
 def test_value_matches_are_higher_precedence_than_type_matches():
-    shape = {str: int,
-             'foo': 'bar'}
-    schema.validate(shape, {'1': 2, 'foo': 'bar'})
+    schema = {str: int,
+              'foo': 'bar'}
+    validate(schema, {'1': 2, 'foo': 'bar'})
     with pytest.raises(AssertionError):
-        schema.validate(shape, {'1': 2, 'foo': 'asdf'})
+        validate(schema, {'1': 2, 'foo': 'asdf'})
 
 
 def test_complex_types():
-    shape = {'name': (str, str),
-             'age': lambda x: isinstance(x, int) and x > 0,
-             'friends': [lambda x: isinstance(x, str) and len(x.split()) == 2],
-             'events': [{'what': str,
-                         'when': float,
-                         'where': (int, int)}]}
+    schema = {'name': (str, str),
+              'age': lambda x: isinstance(x, int) and x > 0,
+              'friends': [lambda x: isinstance(x, str) and len(x.split()) == 2],
+              'events': [{'what': str,
+                          'when': float,
+                          'where': (int, int)}]}
     data = {'name': ('jane', 'doe'),
             'age': 99,
             'friends': ['dave g', 'tom p'],
@@ -621,14 +599,14 @@ def test_complex_types():
                        {'what': 'shopping',
                         'when': 145.22,
                         'where': [77, 44]}]}
-    schema.validate(shape, data)
+    validate(schema, data)
     with pytest.raises(AssertionError):
-        schema.validate(shape, util.dicts.merge(data, {'name': 123}))
+        validate(schema, util.dicts.merge(data, {'name': 123}))
     with pytest.raises(AssertionError):
-        schema.validate(shape, util.dicts.merge(data, {'events': [None]}))
+        validate(schema, util.dicts.merge(data, {'events': [None]}))
     with pytest.raises(AssertionError):
-        schema.validate(shape, util.dicts.merge(data, {'events': [None] + data['events']}))
+        validate(schema, util.dicts.merge(data, {'events': [None] + data['events']}))
     with pytest.raises(AssertionError):
-        schema.validate(shape, util.dicts.merge(data, {'events': [{'what': 'shopping',
-                                                                   'when': 123.11,
-                                                                   'where': [0]}]}))
+        validate(schema, util.dicts.merge(data, {'events': [{'what': 'shopping',
+                                                                     'when': 123.11,
+                                                                     'where': [0]}]}))
