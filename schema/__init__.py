@@ -157,10 +157,14 @@ def _validate(schema, value, exact_match=False):
                 _value = {}
                 for k, v in value.items():
                     value_match = k in schema
-                    type_match = type(k) in [x for x in schema if isinstance(x, type)]
+                    type_match = type(k) in [x for x in schema if isinstance(x, type)] # TODO sort this comprehension for consistent results?
+                    predicate_match = (list(filter(lambda f: f(k) and f, [x for x in schema if isinstance(x, (types.FunctionType, type(callable)))])) or [False])[0] # TODO sort this comprehension for consistent results?
                     any_match = object in schema
-                    if value_match or type_match or any_match:
-                        _schema = schema[k if value_match else type(k) if type_match else object]
+                    if value_match or type_match or predicate_match or any_match:
+                        _schema = schema[k if value_match else
+                                         type(k) if type_match else
+                                         predicate_match if predicate_match else
+                                         object]
                         _value[k] = _validate(_schema, v)
                     elif exact_match:
                         raise AssertionError('{} <{}> does not match schema keys: {}'.format(k, type(k), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema])))
@@ -170,7 +174,7 @@ def _validate(schema, value, exact_match=False):
                         if isinstance(v, (list, tuple)) and v and v[0] == ':O':
                             assert len(v) == 3, ':O schema should be [:O, schema, default-value], not: {}'.format(v)
                             _value[k] = _validate(*v[1:])
-                        elif not isinstance(k, type):
+                        elif not (isinstance(k, type) or isinstance(k, (types.FunctionType, type(callable)))):
                             raise AssertionError('{} <{}> is missing required key: {} <{}>'.format(_value, type(_value), k, type(k)))
                 return _value
         elif schema is object:
@@ -224,7 +228,7 @@ def _validate(schema, value, exact_match=False):
             assert isinstance(value, schema), '{} <{}> is not a: {} <{}>'.format(value, type(value), schema, type(schema))
             return value
         elif isinstance(schema, (types.FunctionType, type(callable))):
-            assert schema(value), '{} <{}> failed fn schema: {} <{}>'.format(value, type(value), util.func.source(schema), type(schema))
+            assert schema(value), '{} <{}> failed predicate schema: {} <{}>'.format(value, type(value), util.func.source(schema), type(schema))
             return value
         else:
             if isinstance(value, bytes):

@@ -279,12 +279,18 @@ def test_intersection_applied_in_order():
         validate(schema, {'name': 'not-an-int'})
 
 
-def test_callable():
+def test_predicate():
     schema = {str: callable}
     val = {'fn': lambda: None}
     assert validate(schema, val)['fn'] is val['fn']
     with pytest.raises(AssertionError):
         validate(schema, {'not-fn': None})
+
+
+def test_predicate_keys_are_optional():
+    schema = {lambda x: isinstance(x, str): str}
+    assert validate(schema, {'a': 'b'}) == {'a': 'b'}
+    assert validate(schema, {('not', 'a', 'str'): 'value-to-drop'}) == {}
 
 
 def test_fn_types():
