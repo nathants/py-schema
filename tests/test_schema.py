@@ -10,6 +10,52 @@ from schema import validate, check
 
 # python specific tests
 
+
+def test_bytes_matches_str_schemas():
+    schema = 'asdf'
+    validate(schema, b'asdf')
+
+
+def test_bytes_not_synonymous_with_str():
+    assert validate(bytes, b'123') == b'123'
+    with pytest.raises(AssertionError):
+        validate(str, b'123')
+
+
+def test_unicode_synonymous_with_str():
+    assert validate(str, u'asdf') == 'asdf'
+    assert validate(u'asdf', 'asdf') == 'asdf'
+    assert validate('asdf', u'asdf') == 'asdf'
+    assert validate(dict, {u'a': 'b'}) == {'a': 'b'}
+
+
+def test_fn_types():
+    schema = (':fn', (int, int), {'returns': str})
+
+    @check
+    def fn(x: int, y: int) -> str:
+        pass
+    assert validate(schema, fn) is fn
+
+    @check
+    def fn(x: int, y: float) -> str:
+        pass
+    with pytest.raises(AssertionError):
+        validate(schema, fn) # pos arg 2 invalid
+
+    @check
+    def fn(x: int, y: int) -> float:
+        pass
+    with pytest.raises(AssertionError):
+        validate(schema, fn) # return invalid
+
+    @check
+    def fn(x: int, y: int):
+        pass
+    with pytest.raises(AssertionError):
+        validate(schema, fn) # missing return schema
+
+
 def test_annotations_return():
     def fn() -> str:
         return 123
@@ -108,11 +154,6 @@ def test_check_yields_and_sends():
         gen.send('1') # violate _send
 
 
-def test_sets_are_illegal():
-    with pytest.raises(AssertionError):
-        validate({1, 2}, set())
-
-
 def test_method():
     class Foo(object):
         @check
@@ -163,6 +204,10 @@ def test_args():
 
 # common tests between python and clojure
 
+
+def test_set_schema():
+    schema = {int}
+    assert validate(schema, {1, 2}) == {1, 2}
 
 def test_none_as_schema():
     schema = {str: None}
@@ -293,33 +338,6 @@ def test_predicate_keys_are_optional():
     assert validate(schema, {('not', 'a', 'str'): 'value-to-drop'}) == {}
 
 
-def test_fn_types():
-    schema = (':fn', (int, int), {'returns': str})
-
-    @check
-    def fn(x: int, y: int) -> str:
-        pass
-    assert validate(schema, fn) is fn
-
-    @check
-    def fn(x: int, y: float) -> str:
-        pass
-    with pytest.raises(AssertionError):
-        validate(schema, fn) # pos arg 2 invalid
-
-    @check
-    def fn(x: int, y: int) -> float:
-        pass
-    with pytest.raises(AssertionError):
-        validate(schema, fn) # return invalid
-
-    @check
-    def fn(x: int, y: int):
-        pass
-    with pytest.raises(AssertionError):
-        validate(schema, fn) # missing return schema
-
-
 def test_empty_dicts():
     assert validate({}, {}) == {}
 
@@ -331,38 +349,6 @@ def test_type_keys_are_optional():
 def test_empty_dicts_exact_match():
     with pytest.raises(AssertionError):
         assert validate({}, {'1': 2}, True)
-
-
-def test_empty_seqs():
-    assert validate(list, []) == []
-    assert validate(tuple, ()) == ()
-    assert validate([str], []) == []
-    with pytest.raises(AssertionError):
-        validate([], [123])
-    with pytest.raises(AssertionError):
-        validate([], (123,))
-
-
-def test_validate_returns_value():
-    assert validate(int, 123) == 123
-
-
-def test_unicde_synonymous_with_str():
-    assert validate(str, u'asdf') == 'asdf'
-    assert validate(u'asdf', 'asdf') == 'asdf'
-    assert validate('asdf', u'asdf') == 'asdf'
-    assert validate(dict, {u'a': 'b'}) == {'a': 'b'}
-
-
-def test_bytes_not_synonymous_with_str():
-    assert validate(bytes, b'123') == b'123'
-    with pytest.raises(AssertionError):
-        validate(str, b'123')
-
-
-def test_bytes_matches_str_schemas():
-    schema = 'asdf'
-    validate(schema, b'asdf')
 
 
 def test_partial_comparisons_for_testing():

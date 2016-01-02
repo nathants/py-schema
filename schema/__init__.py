@@ -130,9 +130,7 @@ def validate(schema, value, exact_match=False):
 
 
 def _validate(schema, value, exact_match=False):
-    # TODO allow sets. each lang should have the richest possible schema. but also support the lowest command denominator, ie json.
     # maybe use ':type/<type>' instead of literal types? ie non jsonable stuff.
-    assert not isinstance(schema, set), 'a set cannot be a schema: {}'.format(schema)
     with util.exceptions.update(_updater(schema, value), AssertionError):
         # TODO break this up into well named pieces
         # TODO replace long lists of conditionals with type based lookup in dicts. falls back on isinstance based looks? ugh. subclasses.
@@ -147,6 +145,10 @@ def _validate(schema, value, exact_match=False):
                 except Exception as e:
                     future.set_exception(e)
             return future
+        elif isinstance(schema, set):
+            assert isinstance(value, set), '{} <{}> does not match schema: {} <{}>'.format(value, type(value), schema, type(schema))
+            assert len(schema) == 1, 'set schemas represent homogenous sets and must contain a single schema: {}'.format(schema)
+            return {_validate(list(schema)[0], x) for x in value}
         elif isinstance(schema, dict):
             assert isinstance(value, dict), '{} <{}> does not match schema: {} <{}>'.format(value, type(value), schema, type(schema))
             # if schema keys are all types, and _value is empty, return. ie, type keys are optional, so {} is a valid {int: int}
