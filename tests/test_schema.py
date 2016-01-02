@@ -366,34 +366,35 @@ def test_partial_comparisons_for_testing():
                           'data': [{'a': 1}]})
 
 
-def test_object_dict():
+def test_object_as_key():
     schema = {object: int}
-    validate(schema, {'1': 2})
+    assert validate(schema, {'1': 2}) == {'1': 2}
     with pytest.raises(AssertionError):
         validate(schema, {'1': 2.0})
 
 
 def test_object_tuple():
     schema = (object, object)
-    validate(schema, (1, '2'))
+    assert validate(schema, (1, '2')) == [1, '2']
     with pytest.raises(AssertionError):
         validate(schema, (1, 2, 3))
 
 
 def test_object_list():
     schema = [object]
-    validate(schema, [1, 2, 3])
-    validate(schema, [1, '2', 3.0])
+    assert validate(schema, [1, 2, 3]) == [1, 2, 3]
+    assert validate(schema, [1, '2', 3.0]) == [1, '2', 3.0]
 
 
-def test_object_type():
+def test_object_value():
     schema = {str: object}
-    validate(schema, {'a': 'apple'})
-    validate(schema, {'b': 123})
+    assert validate(schema, {'a': 'apple'}) == {'a': 'apple'}
+    assert validate(schema, {'b': 123}) == {'b': 123}
 
 
-def test_object_type_exact_match():
+def test_object_value_exact_match():
     schema = {str: object}
+    assert validate(schema, {1: 'apple'}) == {}
     with pytest.raises(AssertionError):
         validate(schema, {1: 'apple'}, True)
 
@@ -401,7 +402,7 @@ def test_object_type_exact_match():
 def test_required_value_to_type():
     schema = {'a': 'apple',
               'b': str}
-    validate(schema, {'a': 'apple', 'b': 'banana'})
+    assert validate(schema, {'a': 'apple', 'b': 'banana'}) == {'a': 'apple', 'b': 'banana'}
     with pytest.raises(AssertionError):
         validate(schema, {'a': 'apple'})
     with pytest.raises(AssertionError):
