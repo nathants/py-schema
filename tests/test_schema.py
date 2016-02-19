@@ -412,14 +412,14 @@ def test_required_value_to_type():
 def test_required_value_to_value():
     schema = {'a': 'apple',
               'b': 'banana'}
-    validate(schema, {'a': 'apple', 'b': 'banana'})
+    assert validate(schema, {'a': 'apple', 'b': 'banana'}) == {'a': 'apple', 'b': 'banana'}
     with pytest.raises(AssertionError):
         validate(schema, {'a': 'apple'})
 
 
 def test_type_to_value():
     schema = {str: 'apple'}
-    validate(schema, {'a': 'apple'})
+    assert validate(schema, {'a': 'apple'}) == {'a': 'apple'}
     with pytest.raises(AssertionError):
         validate(schema, {'a': 'notapple'})
 
@@ -434,52 +434,47 @@ def test_nested_optional():
 def test_optional():
     schema = {'a': 'apple',
               'b': [':O', str, 'banana']}
-    validate(schema, {'a': 'apple'}) == {'a': 'apple', 'b': 'banana'}
-    validate(schema, {'a': 'apple', 'b': 'banana'}) == {'a': 'apple', 'b': 'banana'}
+    assert validate(schema, {'a': 'apple'}) == {'a': 'apple', 'b': 'banana'}
+    assert validate(schema, {'a': 'apple', 'b': 'bar'}) == {'a': 'apple', 'b': 'bar'}
     with pytest.raises(AssertionError):
         validate(schema, {'a': 'apple', 'b': 1.0})
 
 
 def test_value_schema():
     schema = 1
-    validate(schema, 1)
+    assert validate(schema, 1) == 1
     with pytest.raises(AssertionError):
         validate(schema, 2)
 
 
 def test_single_type_schema():
     schema = int
-    validate(schema, 1)
+    assert validate(schema, 1) == 1
     with pytest.raises(AssertionError):
         validate(schema, '1')
 
 
-def test_single_iterable_length_n():
+def test_iterable_length_n():
     schema = [int]
-    validate(schema, [1, 2])
+    assert validate(schema, [1, 2]) == [1, 2]
     with pytest.raises(AssertionError):
         validate(schema, [1, '2'])
 
 
-def test_single_iterable_fixed_length():
+def test_iterable_fixed_length():
     schema = (float, int)
-    validate(schema, [1.1, 2])
+    assert validate(schema, [1.1, 2]) == [1.1, 2]
     with pytest.raises(AssertionError):
         validate(schema, [1.1, '2'])
 
 
-def test_nested_type_to_type_mismatch():
-    schema = {str: {str: int}}
-    validate(schema, {'1': {'1': 1}})
-    with pytest.raises(AssertionError):
-        validate(schema, {'1': None})
-
-
 def test_nested_type_to_type():
     schema = {str: {str: int}}
-    validate(schema, {'1': {'1': 1}})
+    assert validate(schema, {'1': {'1': 1}}) == {'1': {'1': 1}}
     with pytest.raises(AssertionError):
-        validate(schema, {'1': {'1': '1'}})
+        validate(schema, {'1': None})
+    with pytest.raises(AssertionError):
+        validate(schema, {'1': {'1': None}})
 
 
 def test_val_to_val_and_type_to_type():
@@ -501,7 +496,7 @@ def test_type_to_type():
 
 def test_value_to_type():
     schema = {'foo': int}
-    validate(schema, {'foo': 1})
+    assert validate(schema, {'foo': 1}) == {'foo': 1}
     with pytest.raises(AssertionError):
         validate(schema, {'foo': 'bar'})
 
@@ -513,58 +508,36 @@ def test_value_to_value():
         validate(schema, {'foo': 1})
 
 
-def test_fn_schema():
+def test_predicate_schema():
     schema = {'foo': lambda x: isinstance(x, int) and x > 0}
-    validate(schema, {'foo': 1})
+    assert validate(schema, {'foo': 1}) == {'foo': 1}
     with pytest.raises(AssertionError):
         validate(schema, {'foo': 0})
 
 
-def test_nested_fn_schema():
+def test_nested_predicate_schema():
     schema = {'foo': {'bar': lambda x: isinstance(x, int) and x > 0}}
-    validate(schema, {'foo': {'bar': 1}})
+    assert validate(schema, {'foo': {'bar': 1}}) == {'foo': {'bar': 1}}
     with pytest.raises(AssertionError):
         validate(schema, {'foo': {'bar': 0}})
 
 
-def test_iterable_length_n_bad_validator():
-    schema = {str: [str, str]}
+def test_iterable_length_n_must_be_length_one():
+    schema = [str, str]
     with pytest.raises(AssertionError):
-        validate(schema, {'blah': ['blah', 'blah']})
-
-
-def test_iterable_length_n():
-    schema = {str: [str]}
-    validate(schema, {'1': ['1', '2']})
-    with pytest.raises(AssertionError):
-        validate(schema, {'1': 1})
-    with pytest.raises(AssertionError):
-        validate(schema, {'1': ['1', 2]})
-    with pytest.raises(AssertionError):
-        validate(schema, {'1': None})
-
-
-def test_iterable_fixed_length():
-    schema = {str: (str, str)}
-    validate(schema, {'1': ['1', '2']})
-    with pytest.raises(AssertionError):
-        validate(schema, {'1': ['1']})
-    with pytest.raises(AssertionError):
-        validate(schema, {'1': ['1', '2', '3']})
-    with pytest.raises(AssertionError):
-        validate(schema, {'1': ['1', 2]})
+        validate(schema, ['blah'])
 
 
 def test_nested_iterables():
-    schema = {str: [[str]]}
-    validate(schema, {'1': [['1'], ['2']]})
+    schema = [[str]]
+    assert validate(schema, [['1'], ['2']]) == [['1'], ['2']]
     with pytest.raises(AssertionError):
-        assert validate(schema, {'1': [['1'], [1]]})
+        assert validate(schema, [['1'], [1]])
 
 
 def test_many_keys():
     schema = {str: int}
-    validate(schema, {'1': 2, '3': 4})
+    assert validate(schema, {'1': 2, '3': 4}) == {'1': 2, '3': 4}
     with pytest.raises(AssertionError):
         validate(schema, {'1': 2, '3': 4.0})
 
@@ -572,28 +545,29 @@ def test_many_keys():
 def test_value_matches_are_higher_precedence_than_type_matches():
     schema = {str: int,
               'foo': 'bar'}
-    validate(schema, {'1': 2, 'foo': 'bar'})
+    assert validate(schema, {'1': 2, 'foo': 'bar'}) == {'1': 2, 'foo': 'bar'}
     with pytest.raises(AssertionError):
-        validate(schema, {'1': 2, 'foo': 'asdf'})
+        validate(schema, {'1': 2, 'foo': 3})
 
 
 def test_complex_types():
     schema = {'name': (str, str),
               'age': lambda x: isinstance(x, int) and x > 0,
-              'friends': [lambda x: isinstance(x, str) and len(x.split()) == 2],
+              'friends': [(str, str)],
               'events': [{'what': str,
                           'when': float,
                           'where': (int, int)}]}
-    data = {'name': ('jane', 'doe'),
+    data = {'name': ['jane', 'doe'],
             'age': 99,
-            'friends': ['dave g', 'tom p'],
+            'friends': [['dave', 'g'],
+                        ['tom', 'p']],
             'events': [{'what': 'party',
                         'when': 123.11,
-                        'where': (65, 73)},
+                        'where': [65, 73]},
                        {'what': 'shopping',
                         'when': 145.22,
                         'where': [77, 44]}]}
-    validate(schema, data)
+    assert validate(schema, data) == data
     with pytest.raises(AssertionError):
         validate(schema, util.dicts.merge(data, {'name': 123}))
     with pytest.raises(AssertionError):
