@@ -156,7 +156,7 @@ def _validate(schema, value, exact_match=False):
                 return {}
             else:
                 # check for items in value that dont satisfy schema, dropping unknown keys unless exact_match=true
-                # TODO update to support :U keys in dicts as in clj-schema
+                # TODO update to conform to clj-schema. value, type, etc now deprecated.
                 _value = {}
                 for k, v in value.items():
                     value_match = k in schema
