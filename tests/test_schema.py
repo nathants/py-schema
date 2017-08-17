@@ -119,7 +119,7 @@ def test_check_coroutines():
     @tornado.gen.coroutine
     @check
     def main(x: int) -> float:
-        yield tornado.gen.moment
+        yield None
         if x > 0:
             x = float(x)
         return x
