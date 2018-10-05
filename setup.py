@@ -10,7 +10,7 @@ setuptools.setup(
     python_requires='>=3.6',
     url='http://github.com/nathants/py-schema',
     install_requires=['py-util'],
-    dependency_links=['https://github.com/nathants/py-util/tarball/4d1fe20ecfc0b6982933a8c9b622b1b86da2be5e#egg=py-util-0.0.1'],
+    dependency_links=['https://github.com/nathants/py-util/tarball/e1fd73d9aa90d121e0d5c9c2da4cf04283bc2b94#egg=py-util-0.0.1'],
     packages=['schema'],
     description='data centric schema validation',
 )

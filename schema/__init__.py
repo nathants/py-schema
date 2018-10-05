@@ -2,7 +2,7 @@ import functools
 import inspect
 import pprint
 import re
-import util.async
+import util.misc
 import util.data
 import util.dicts
 import util.exceptions
@@ -134,8 +134,8 @@ def _validate(schema, value, exact_match=False):
     with util.exceptions.update(_updater(schema, value), AssertionError):
         # TODO break this up into well named pieces
         # TODO replace long lists of conditionals with type based lookup in dicts. falls back on isinstance based looks? ugh. subclasses.
-        value_is_a_future = util.async.is_future(value)
-        schema_is_a_future_type = util.async.is_future(schema) and type(schema) is type
+        value_is_a_future = util.misc.is_future(value)
+        schema_is_a_future_type = util.misc.is_future(schema) and type(schema) is type
         if value_is_a_future and not schema_is_a_future_type:
             future = type(value)()
             @value.add_done_callback
