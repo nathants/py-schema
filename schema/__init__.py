@@ -13,15 +13,12 @@ import traceback
 import types
 import os
 
-
 disabled = os.environ.get('DISABLE_SCHEMA')
-
 
 _schema_commands = (':U', # union
                     ':I', # intersection
                     ':O', # optional
                     ':fn')
-
 
 def is_valid(schema, value):
     try:
@@ -29,7 +26,6 @@ def is_valid(schema, value):
         return True
     except AssertionError:
         return False
-
 
 def validate(schema, value, exact_match=False):
     """
@@ -79,7 +75,6 @@ def validate(schema, value, exact_match=False):
     >>> with pytest.raises(AssertionError):
     ...     validate(schema, {'alias': 'joe'})
 
-
     # dicts with values->types
     >>> schema = {'name': float}
     >>> assert validate(schema, {'name': 3.14}) == {'name': 3.14}
@@ -128,7 +123,6 @@ def validate(schema, value, exact_match=False):
         return value
     return _validate(schema, value, exact_match)
 
-
 def _validate(schema, value, exact_match=False):
     # maybe use ':type/<type>' instead of literal types? ie non jsonable stuff.
     with util.exceptions.update(_updater(schema, value), AssertionError):
@@ -137,14 +131,11 @@ def _validate(schema, value, exact_match=False):
         value_is_a_future = util.misc.is_future(value)
         schema_is_a_future_type = util.misc.is_future(schema) and type(schema) is type
         if value_is_a_future and not schema_is_a_future_type:
-            future = type(value)()
-            @value.add_done_callback
-            def fn(f):
-                try:
-                    future.set_result(_validate(schema, f.result()))
-                except Exception as e:
-                    future.set_exception(e)
-            return future
+            _set_result = value.set_result
+            def f(x):
+                _set_result(_validate(schema, x))
+            value.set_result = f
+            return value
         elif isinstance(schema, set):
             assert isinstance(value, set), '{} <{}> does not match schema: {} <{}>'.format(value, type(value), schema, type(schema))
             assert len(schema) == 1, 'set schemas represent homogenous sets and must contain a single schema: {}'.format(schema)
@@ -195,7 +186,7 @@ def _validate(schema, value, exact_match=False):
                     for _schema in schema[1:]:
                         try:
                             value = _validate(_schema, value)
-                        except AssertionError as e:
+                        except AssertionError:
                             tracebacks.append(traceback.format_exc())
                     if len(tracebacks) == len(schema[1:]):
                         raise AssertionError('{} <{}> did not match *any* of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
@@ -207,7 +198,7 @@ def _validate(schema, value, exact_match=False):
                     for _schema in schema[1:]:
                         try:
                             value = _validate(_schema, value)
-                        except AssertionError as e:
+                        except AssertionError:
                             tracebacks.append(traceback.format_exc())
                     if tracebacks:
                         raise AssertionError('{} <{}> did not match *all* of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
@@ -239,10 +230,8 @@ def _validate(schema, value, exact_match=False):
             assert value == schema, '{} <{}> does not equal: {} <{}>'.format(value, type(value), schema, type(schema))
             return value
 
-
 def _formdent(x):
     return util.strings.indent(pprint.pformat(x, width=1), 2)
-
 
 def _update_functions(schema):
     def fn(x):
@@ -252,10 +241,8 @@ def _update_functions(schema):
         return x
     return fn
 
-
 def _updater(schema, value):
     return lambda x: _prettify(x + _helpful_message(schema, value))
-
 
 def _helpful_message(schema, value):
     for fn in [x for x in util.seqs.flatten(schema) if isinstance(x, (types.FunctionType, types.LambdaType))]:
@@ -294,17 +281,14 @@ def _helpful_message(schema, value):
         util.strings.indent(schema, 2),
     )
 
-
 def _starts_with_keyword(x):
     if x and isinstance(x[0], str) and x[0].startswith(':'):
         return True
     else:
         return False
 
-
 def _prettify(x):
     return re.sub("\<\w+ \'([\w\.]+)\'\>", r'\1', str(x))
-
 
 def _get_schemas(fn, args, kwargs):
     arg_schemas, kwarg_schemas, return_schema = _read_annotations(fn, args, kwargs)
@@ -316,7 +300,6 @@ def _get_schemas(fn, args, kwargs):
                'arg': arg_schemas,
                'kwarg': kwarg_schemas}
     return schemas
-
 
 def _read_annotations(fn, arg_schemas, kwarg_schemas):
     if not arg_schemas:
@@ -346,7 +329,6 @@ def _read_annotations(fn, arg_schemas, kwarg_schemas):
         return_schema = object
     return arg_schemas, kwarg_schemas, return_schema
 
-
 def _check_args(args, kwargs, name, schemas):
     with util.exceptions.update(_prettify, AssertionError):
         # TODO better to use inspect.getcallargs() for this? would change the semantics of pos arg checking. hmmn...
@@ -372,7 +354,6 @@ def _check_args(args, kwargs, name, schemas):
                 raise AssertionError('cannot check {} for unknown key: {}={}'.format(name, k, v))
         return _args, _kwargs
 
-
 def _fn_check(decoratee, name, schemas):
     @functools.wraps(decoratee)
     def decorated(*args, **kwargs):
@@ -389,7 +370,6 @@ def _fn_check(decoratee, name, schemas):
             output = validate(schemas['returns'], value)
         return output
     return decorated
-
 
 def _gen_check(decoratee, name, schemas):
     @functools.wraps(decoratee)
@@ -427,7 +407,6 @@ def _gen_check(decoratee, name, schemas):
             except:
                 send_exception = sys.exc_info()
     return decorated
-
 
 # TODO schema.check doesnt support switching between arg and kwarg at call time.
 # u have to use which ever way you defined the annotation. ie default value?
