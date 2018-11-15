@@ -13,7 +13,7 @@ import traceback
 import types
 import os
 
-disabled = os.environ.get('DISABLE_SCHEMA')
+disabled = os.environ.get('SCHEMA_DISABLE')
 
 _schema_commands = (':U', # union
                     ':I', # intersection
