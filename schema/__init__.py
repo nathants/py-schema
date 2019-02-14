@@ -245,7 +245,7 @@ def _updater(schema, value):
     return lambda x: _prettify(x + _helpful_message(schema, value))
 
 def _helpful_message(schema, value):
-    for fn in [x for x in util.seqs.flatten(schema) if isinstance(x, (types.FunctionType, types.LambdaType))]:
+    for fn in [x for x in util.iter.flatten(schema) if isinstance(x, (types.FunctionType, types.LambdaType))]:
         try:
             filename, linenum = fn.__code__.co_filename, fn.__code__.co_firstlineno
             with open(filename) as f:
