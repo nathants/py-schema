@@ -288,7 +288,7 @@ def _starts_with_keyword(x):
         return False
 
 def _prettify(x):
-    return re.sub("\<\w+ \'([\w\.]+)\'\>", r'\1', str(x))
+    return re.sub(r"\<\w+ \'([\w\.]+)\'\>", r'\1', str(x))
 
 def _get_schemas(fn, args, kwargs):
     arg_schemas, kwarg_schemas, return_schema = _read_annotations(fn, args, kwargs)
@@ -408,6 +408,21 @@ def _gen_check(decoratee, name, schemas):
                 send_exception = sys.exc_info()
     return decorated
 
+def _coroutine_check(decoratee, name, schemas):
+    @functools.wraps(decoratee)
+    async def decorated(*args, **kwargs):
+        args = util.data.freeze(args)
+        kwargs = util.data.freeze(kwargs)
+        with util.exceptions.update('schema.check failed for coroutine:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
+            if args and inspect.ismethod(getattr(args[0], decoratee.__name__, None)):
+                a, kwargs = _check_args(args[1:], kwargs, name, schemas)
+                args = [args[0]] + a
+            else:
+                args, kwargs = _check_args(args, kwargs, name, schemas)
+            val = await decoratee(*args, **kwargs)
+            return validate(schemas['returns'], val)
+    return decorated
+
 # TODO schema.check doesnt support switching between arg and kwarg at call time.
 # u have to use which ever way you defined the annotation. ie default value?
 # or actually is this a feature? helpful constraint?
@@ -419,7 +434,9 @@ def check(*args, **kwargs):
             return decoratee
         name = util.func.name(decoratee)
         schemas = _get_schemas(decoratee, args, kwargs)
-        if inspect.isgeneratorfunction(decoratee):
+        if inspect.iscoroutinefunction(decoratee):
+            decorated = _coroutine_check(decoratee, name, schemas)
+        elif inspect.isgeneratorfunction(decoratee):
             decorated = _gen_check(decoratee, name, schemas)
         else:
             decorated = _fn_check(decoratee, name, schemas)

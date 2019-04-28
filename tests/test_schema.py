@@ -104,6 +104,18 @@ def test_check_generators():
         next(main(1.0))
 
 def test_check_coroutines():
+    @check
+    async def main(x: int) -> float:
+        if x > 0:
+            x = float(x)
+        return x
+    assert tornado.ioloop.IOLoop.instance().run_sync(lambda: main(1)) == 1.0
+    with pytest.raises(AssertionError):
+        tornado.ioloop.IOLoop.instance().run_sync(lambda: main(1.0))
+    with pytest.raises(AssertionError):
+        tornado.ioloop.IOLoop.instance().run_sync(lambda: main(-1))
+
+def test_check_generator():
     @tornado.gen.coroutine
     @check
     def main(x: int) -> float:
@@ -125,20 +137,17 @@ def test_check_yields_and_sends():
             yield 'b'
         else:
             yield 3
-
     gen = main()
     assert gen.send(None) == 'a'
     assert gen.send(1) == 'b'
-
     gen = main()
     next(gen)
     with pytest.raises(AssertionError):
         gen.send(-1) # violate yields
-
     gen = main()
     next(gen)
     with pytest.raises(AssertionError):
-        gen.send('1') # violate _send
+        gen.send('1') # violate sends
 
 def test_method():
     class Foo(object):
