@@ -6,6 +6,7 @@ import util.misc
 import util.data
 import util.dicts
 import util.exceptions
+import util.iter
 import util.func
 import util.strings
 import sys
