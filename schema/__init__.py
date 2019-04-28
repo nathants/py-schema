@@ -15,9 +15,9 @@ import os
 
 disabled = os.environ.get('SCHEMA_DISABLE')
 
-_schema_commands = (':U', # union
-                    ':I', # intersection
-                    ':O', # optional
+_schema_commands = (':or',
+                    ':and',
+                    ':optional',
                     ':fn')
 
 def is_valid(schema, value):
@@ -51,15 +51,20 @@ def validate(schema, value, exact_match=False):
     >>> with pytest.raises(AssertionError):
     ...     validate(schema, [1])
 
-    ### union types with :U
-    >>> schema = (':U', int, float)
+    ### union types with :or
+    >>> schema = (':or', int, float)
     >>> assert validate(schema, 1) == 1
     >>> assert validate(schema, 1.0) == 1.0
     >>> with pytest.raises(AssertionError):
     ...     validate(schema, '1')
 
-    ## intersection types with :I
-    ...
+    ## intersection types with :and
+    >>> schema = (':and', lambda x: x.startswith('a'), lambda x: x.endswith('z'))
+    >>> assert validate(schema, 'a-z') == 'a-z'
+    >>> with pytest.raises(AssertionError):
+    ...     validate(schema, 'a-b')
+    >>> with pytest.raises(AssertionError):
+    ...     validate(schema, 'b-z')
 
     ### dicts can use types and values for k's and v's, and also lambdas for v'util.
 
@@ -86,8 +91,8 @@ def validate(schema, value, exact_match=False):
     >>> with pytest.raises(AssertionError):
     ...     validate({'name': lambda x: x in ['john', 'jane']}, {'name': 'rose'})
 
-    # dicts with :O k's provide a value for a missing key and validate provided keys
-    >>> schema = {'name': (':O', str, 'jane')}
+    # dicts with :optional k's provide a value for a missing key and validate provided keys
+    >>> schema = {'name': (':optional', str, 'jane')}
     >>> assert validate(schema, {}) == {'name': 'jane'}
     >>> assert validate(schema, {'name': 'rose'}) == {'name': 'rose'}
     >>> with pytest.raises(AssertionError):
@@ -165,8 +170,8 @@ def _validate(schema, value, exact_match=False):
                 # check for items in schema missing in value, filling in optional value
                 for k, v in schema.items():
                     if k not in _value:
-                        if isinstance(v, (list, tuple)) and v and v[0] == ':O':
-                            assert len(v) == 3, ':O schema should be [:O, schema, default-value], not: {}'.format(v)
+                        if isinstance(v, (list, tuple)) and v and v[0] == ':optional':
+                            assert len(v) == 3, ':optional schema should be [:optional, schema, default-value], not: {}'.format(v)
                             _value[k] = _validate(*v[1:])
                         elif not (isinstance(k, type) or isinstance(k, (types.FunctionType, type(callable)))):
                             raise AssertionError('{} <{}> is missing required key: {} <{}>'.format(_value, type(_value), k, type(k)))
@@ -177,10 +182,10 @@ def _validate(schema, value, exact_match=False):
         elif isinstance(schema, (list, tuple)):
             assert isinstance(value, (list, tuple)) or _starts_with_keyword(schema), '{} <{}> is not a seq: {} <{}>'.format(value, type(value), schema, type(schema))
             if schema and schema[0] in _schema_commands:
-                if schema[0] == ':O':
-                    assert len(schema) == 3, ':O schema should be [:O, schema, default-value], not: {}'.format(schema)
+                if schema[0] == ':optional':
+                    assert len(schema) == 3, ':optional schema should be [:optional, schema, default-value], not: {}'.format(schema)
                     return _validate(schema[1], value)
-                elif schema[0] == ':U':
+                elif schema[0] == ':or':
                     assert schema[1:], 'union types cannot be empty: {}'.format(schema)
                     tracebacks = []
                     for _schema in schema[1:]:
@@ -192,7 +197,7 @@ def _validate(schema, value, exact_match=False):
                         raise AssertionError('{} <{}> did not match *any* of [{}]\n{}'.format(value, type(value), ', '.join(['{} <{}>'.format(x, type(x)) for x in schema[1:]]), '\n'.join(tracebacks)))
                     else:
                         return value
-                elif schema[0] == ':I':
+                elif schema[0] == ':and':
                     assert schema[1:], 'intersection types cannot be empty: {}'.format(schema)
                     tracebacks = []
                     for _schema in schema[1:]:

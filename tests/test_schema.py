@@ -215,7 +215,7 @@ def test_false_as_schema():
     assert validate(schema, {'a': False}) == {'a': False}
 
 def test_new_schema_old_data():
-    schema = {'a': int, 'b': (':O', int, 2)}
+    schema = {'a': int, 'b': (':optional', int, 2)}
     assert validate(schema, {'a': 1}) == {'a': 1, 'b': 2}
 
 def test_old_schema_new_data():
@@ -256,19 +256,19 @@ def test_future_fail():
         f.set_result(1)
 
 def test_union():
-    schema = (':U', str, None)
+    schema = (':or', str, None)
     assert validate(schema, 'foo') == 'foo'
     assert validate(schema, None) is None
     with pytest.raises(AssertionError):
         validate(schema, True)
 
 def test_union_empty():
-    schema = (':U',)
+    schema = (':or',)
     with pytest.raises(AssertionError):
         validate(schema, True)
 
 def test_intersection():
-    schema = (':I', str, lambda x: len(x) > 2)
+    schema = (':and', str, lambda x: len(x) > 2)
     assert validate(schema, 'foo') == 'foo'
     with pytest.raises(AssertionError):
         assert validate(schema, [])
@@ -276,12 +276,12 @@ def test_intersection():
         assert validate(schema, "")
 
 def test_intersection_empty():
-    schema = (':I',)
+    schema = (':and',)
     with pytest.raises(AssertionError):
         validate(schema, True)
 
 def test_union_applied_in_order():
-    schema = (':U', {'name': (':O', str, 'bob')},
+    schema = (':or', {'name': (':optional', str, 'bob')},
                     {'name': int})
     assert validate(schema, {}) == {'name': 'bob'}
     assert validate(schema, {'name': 123}) == {'name': 123}
@@ -289,7 +289,7 @@ def test_union_applied_in_order():
         validate(schema, {'name': 1.0})
 
 def test_intersection_applied_in_order():
-    schema = (':I', {'name': (':O', object, 'bob')},
+    schema = (':and', {'name': (':optional', object, 'bob')},
                     {'name': int})
     assert validate(schema, {'name': 123}) == {'name': 123}
     with pytest.raises(AssertionError):
@@ -384,14 +384,14 @@ def test_type_to_value():
         validate(schema, {'a': 'notapple'})
 
 def test_nested_optional():
-    schema = {'a': {'b': (':O', object, 'default-val')}}
+    schema = {'a': {'b': (':optional', object, 'default-val')}}
     assert validate(schema, {'a': {}}) == {'a': {'b': 'default-val'}}
-    schema = [{'name': (':O', object, 'bob')}]
+    schema = [{'name': (':optional', object, 'bob')}]
     assert validate(schema, [{}]) == [{'name': 'bob'}]
 
 def test_optional():
     schema = {'a': 'apple',
-              'b': [':O', str, 'banana']}
+              'b': [':optional', str, 'banana']}
     assert validate(schema, {'a': 'apple'}) == {'a': 'apple', 'b': 'banana'}
     assert validate(schema, {'a': 'apple', 'b': 'bar'}) == {'a': 'apple', 'b': 'bar'}
     with pytest.raises(AssertionError):
