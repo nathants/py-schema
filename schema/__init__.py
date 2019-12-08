@@ -366,7 +366,7 @@ def _fn_check(decoratee, name, schemas):
         args = util.data.freeze(args)
         kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for args to function:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
-            if args and inspect.ismethod(getattr(args[0], decoratee.__name__, None)):
+            if args and decoratee.__code__ is getattr(getattr(args[0], decoratee.__name__, None), '__orig_code__', None):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)
                 args = [args[0]] + a
             else:
@@ -375,6 +375,7 @@ def _fn_check(decoratee, name, schemas):
         with util.exceptions.update('schema.check failed for return value of function:\n {}'.format(name), AssertionError):
             output = validate(schemas['returns'], value)
         return output
+    decorated.__orig_code__ = decoratee.__code__
     return decorated
 
 def _gen_check(decoratee, name, schemas):
@@ -383,7 +384,7 @@ def _gen_check(decoratee, name, schemas):
         args = util.data.freeze(args)
         kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for generator:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
-            if args and inspect.ismethod(getattr(args[0], decoratee.__name__, None)):
+            if args and decoratee.__code__ is getattr(getattr(args[0], decoratee.__name__, None), '__orig_code__', None):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)
                 args = [args[0]] + a
             else:
@@ -412,6 +413,7 @@ def _gen_check(decoratee, name, schemas):
                 to_send = yield to_yield
             except:
                 send_exception = sys.exc_info()
+    decorated.__orig_code__ = decoratee.__code__
     return decorated
 
 def _coroutine_check(decoratee, name, schemas):
@@ -420,13 +422,14 @@ def _coroutine_check(decoratee, name, schemas):
         args = util.data.freeze(args)
         kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for coroutine:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
-            if args and inspect.ismethod(getattr(args[0], decoratee.__name__, None)):
+            if args and decoratee.__code__ is getattr(getattr(args[0], decoratee.__name__, None), '__orig_code__', None):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)
                 args = [args[0]] + a
             else:
                 args, kwargs = _check_args(args, kwargs, name, schemas)
             val = await decoratee(*args, **kwargs)
             return validate(schemas['returns'], val)
+    decorated.__orig_code__ = decoratee.__code__
     return decorated
 
 # TODO schema.check doesnt support switching between arg and kwarg at call time.

@@ -1,3 +1,4 @@
+import io
 import pytest
 import util.dicts
 import tornado.concurrent
@@ -162,6 +163,12 @@ def test_method():
         Foo().bar('1')
     with pytest.raises(AssertionError):
         Foo().bar(0)
+
+def test_method_like_arg():
+    @check
+    def read(f: io.IOBase) -> str:
+        return f.read()
+    assert read(io.StringIO('foo')) == 'foo'
 
 def test_generator_method():
     class Foo(object):
