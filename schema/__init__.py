@@ -13,8 +13,11 @@ import sys
 import traceback
 import types
 import os
+import logging
 
 disabled = os.environ.get('SCHEMA_DISABLE')
+if disabled:
+    logging.info('schema has been disabled')
 
 _schema_commands = (':or',
                     ':and',
