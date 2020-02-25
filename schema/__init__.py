@@ -3,7 +3,6 @@ import inspect
 import pprint
 import re
 import util.misc
-import util.data
 import util.dicts
 import util.exceptions
 import util.iter
@@ -156,7 +155,8 @@ def _validate(schema, value, exact_match=False):
             else:
                 # check for items in value that dont satisfy schema, dropping unknown keys unless exact_match=true
                 # TODO update to conform to clj-schema. value, type, etc now deprecated.
-                _value = {}
+                _value = value.copy()
+                _value.clear()
                 for k, v in value.items():
                     value_match = k in schema
                     type_match = type(k) in [x for x in schema if isinstance(x, type)] # TODO sort this comprehension for consistent results?
@@ -365,8 +365,6 @@ def _check_args(args, kwargs, name, schemas):
 def _fn_check(decoratee, name, schemas):
     @functools.wraps(decoratee)
     def decorated(*args, **kwargs):
-        args = util.data.freeze(args)
-        kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for args to function:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
             if args and decoratee.__code__ is getattr(getattr(args[0], decoratee.__name__, None), '__orig_code__', None):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)
@@ -383,8 +381,6 @@ def _fn_check(decoratee, name, schemas):
 def _gen_check(decoratee, name, schemas):
     @functools.wraps(decoratee)
     def decorated(*args, **kwargs):
-        args = util.data.freeze(args)
-        kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for generator:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
             if args and decoratee.__code__ is getattr(getattr(args[0], decoratee.__name__, None), '__orig_code__', None):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)
@@ -421,8 +417,6 @@ def _gen_check(decoratee, name, schemas):
 def _coroutine_check(decoratee, name, schemas):
     @functools.wraps(decoratee)
     async def decorated(*args, **kwargs):
-        args = util.data.freeze(args)
-        kwargs = util.data.freeze(kwargs)
         with util.exceptions.update('schema.check failed for coroutine:\n  {}'.format(name), AssertionError, when=lambda x: 'failed for ' not in x):
             if args and decoratee.__code__ is getattr(getattr(args[0], decoratee.__name__, None), '__orig_code__', None):
                 a, kwargs = _check_args(args[1:], kwargs, name, schemas)

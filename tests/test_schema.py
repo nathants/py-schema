@@ -1,3 +1,4 @@
+import collections
 import io
 import pytest
 import util.dicts
@@ -376,6 +377,14 @@ def test_required_value_to_type():
         validate(schema, {'a': 'apple'})
     with pytest.raises(AssertionError):
         validate(schema, {'a': 'apple', 'b': 1})
+
+def test_default_dict():
+    schema = {str: int}
+    val = collections.defaultdict(int, {'a': 1})
+    res = validate(schema, val)
+    assert res == {'a': 1}
+    res['b'] += 1
+    assert res == {'a': 1, 'b': 1}
 
 def test_required_value_to_value():
     schema = {'a': 'apple',
