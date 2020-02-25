@@ -151,7 +151,7 @@ def _validate(schema, value, exact_match=False):
             assert isinstance(value, dict), '{} <{}> does not match schema: {} <{}>'.format(value, type(value), schema, type(schema))
             # if schema keys are all types, and _value is empty, return. ie, type keys are optional, so {} is a valid {int: int}
             if value == {} and {type(x) for x in schema} == {type}:
-                return {}
+                return value
             else:
                 # check for items in value that dont satisfy schema, dropping unknown keys unless exact_match=true
                 # TODO update to conform to clj-schema. value, type, etc now deprecated.

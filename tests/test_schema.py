@@ -386,6 +386,14 @@ def test_default_dict():
     res['b'] += 1
     assert res == {'a': 1, 'b': 1}
 
+def test_empty_default_dict():
+    schema = {str: int}
+    val = collections.defaultdict(int)
+    res = validate(schema, val)
+    assert res == {}
+    res['b'] += 1
+    assert res == {'b': 1}
+
 def test_required_value_to_value():
     schema = {'a': 'apple',
               'b': 'banana'}
