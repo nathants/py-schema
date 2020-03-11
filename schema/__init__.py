@@ -239,7 +239,7 @@ def _validate(schema, value, exact_match=False):
             return value
 
 def _formdent(x):
-    return util.strings.indent(pprint.pformat(x, width=1), 2)
+    return util.strings.indent(pprint.pformat(x, width=120), 2)
 
 def _update_functions(schema):
     def fn(x):
@@ -283,9 +283,9 @@ def _helpful_message(schema, value):
         except:
             continue
     else:
-        schema = pprint.pformat(schema, width=1)
+        schema = pprint.pformat(schema, width=120)
     return '\n\nobj:\n{}\nschema:\n{}'.format(
-        util.strings.indent(pprint.pformat(value, width=1), 2),
+        util.strings.indent(pprint.pformat(value, width=120), 2),
         util.strings.indent(schema, 2),
     )
 
@@ -342,7 +342,7 @@ def _check_args(args, kwargs, name, schemas):
         # TODO better to use inspect.getcallargs() for this? would change the semantics of pos arg checking. hmmn...
         # look at the todo in util.web.post for an example.
         assert len(schemas['arg']) == len(args) or schemas['args'], 'you asked to check {} for {} pos args, but {} were provided\nargs:\n{}\nschema:\n{}'.format(
-            name, len(schemas['arg']), len(args), pprint.pformat(args, width=1), pprint.pformat(schemas, width=1)
+            name, len(schemas['arg']), len(args), pprint.pformat(args, width=120), pprint.pformat(schemas, width=120)
         )
         _args = []
         for i, (schema, arg) in enumerate(zip(schemas['arg'], args)):
